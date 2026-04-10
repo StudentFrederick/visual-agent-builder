@@ -4,10 +4,20 @@ import { addEdge, applyNodeChanges, applyEdgeChanges } from '@xyflow/react'
 
 const FLOW_KEY = 'vab_flow'
 
+const VALID_TYPES = new Set(['agentNode', 'orchestratorNode', 'serviceNode'])
+
 function loadFlow() {
   try {
     const saved = localStorage.getItem(FLOW_KEY)
-    return saved ? JSON.parse(saved) : { nodes: [], edges: [] }
+    if (!saved) return { nodes: [], edges: [] }
+    const parsed = JSON.parse(saved)
+    // Filter out nodes with unknown types (from old/corrupt data)
+    const nodes = (parsed.nodes || []).filter(n => VALID_TYPES.has(n.type))
+    const validIds = new Set(nodes.map(n => n.id))
+    const edges = (parsed.edges || []).filter(
+      e => validIds.has(e.source) && validIds.has(e.target)
+    )
+    return { nodes, edges }
   } catch {
     return { nodes: [], edges: [] }
   }
