@@ -8,6 +8,7 @@ import {
   getSubagentNodes,
   executeOrchestrator
 } from '../utils/orchestrator.js'
+import { resolveTemplate } from '../utils/template.js'
 
 export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles }) {
   const isRunning = useRef(false)
@@ -31,15 +32,26 @@ export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEd
 
           updateNodeData(node.id, { status: 'running', output: '' })
 
+          // Resolve template variables in node config
+          const resolvedPrompt = resolveTemplate(node.data.systemPrompt || '', nodes)
+          const resolvedConfig = node.data.serviceConfig
+            ? {
+                ...node.data.serviceConfig,
+                url: resolveTemplate(node.data.serviceConfig.url || '', nodes),
+                headers: resolveTemplate(node.data.serviceConfig.headers || '', nodes)
+              }
+            : null
+
           try {
             let output
 
             if (node.type === 'orchestratorNode') {
               // Orchestrator: use agentic loop with tool use
               const subagents = getSubagentNodes(node.id, nodes, edges)
+              const resolvedNode = { ...node, data: { ...node.data, systemPrompt: resolvedPrompt } }
               output = await executeOrchestrator({
                 apiKey,
-                node,
+                node: resolvedNode,
                 subagentNodes: subagents,
                 userMessage: prevOutput,
                 onUpdate: data => updateNodeData(node.id, data),
@@ -49,16 +61,12 @@ export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEd
               })
             } else if (node.type === 'serviceNode') {
               // Service node: execute HTTP/webhook action
-              output = await executeService(
-                node.data.serviceType,
-                node.data.serviceConfig,
-                prevOutput
-              )
+              output = await executeService(node.data.serviceType, resolvedConfig, prevOutput)
             } else {
               // Regular agent: simple streaming call
               output = await streamClaudeResponse({
                 apiKey,
-                systemPrompt: node.data.systemPrompt,
+                systemPrompt: resolvedPrompt,
                 userMessage: prevOutput,
                 temperature: node.data.temperature,
                 onChunk: text => updateNodeData(node.id, { output: text })
