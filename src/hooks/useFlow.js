@@ -55,6 +55,27 @@ export function useFlow() {
     ])
   }, [])
 
+  const addOrchestratorNode = useCallback(() => {
+    const id = `node-${Date.now()}`
+    setNodes(ns => [
+      ...ns,
+      {
+        id,
+        type: 'orchestratorNode',
+        position: { x: 100 + ns.length * 240, y: 150 },
+        data: {
+          name: 'Orchestrator',
+          systemPrompt: '',
+          temperature: 0.7,
+          maxRounds: 5,
+          output: '',
+          status: 'idle',
+          currentRound: 0
+        }
+      }
+    ])
+  }, [])
+
   const updateNodeData = useCallback((id, data) => {
     setNodes(ns =>
       ns.map(n => (n.id === id ? { ...n, data: { ...n.data, ...data } } : n))
@@ -73,6 +94,7 @@ export function useFlow() {
     onEdgesChange,
     onConnect,
     addNode,
+    addOrchestratorNode,
     updateNodeData,
     clearFlow
   }

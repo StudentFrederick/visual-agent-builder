@@ -1,8 +1,12 @@
 import { ReactFlow, Background, Controls, MiniMap } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { AgentNode } from './AgentNode.jsx'
+import { OrchestratorNode } from './OrchestratorNode.jsx'
 
-const nodeTypes = { agentNode: AgentNode }
+const nodeTypes = { agentNode: AgentNode, orchestratorNode: OrchestratorNode }
+
+const miniMapColor = node =>
+  node.type === 'orchestratorNode' ? '#9333ea' : '#6366f1'
 
 export function FlowCanvas({
   nodes,
@@ -27,7 +31,7 @@ export function FlowCanvas({
       >
         <Background />
         <Controls />
-        <MiniMap nodeColor={() => '#6366f1'} />
+        <MiniMap nodeColor={miniMapColor} />
       </ReactFlow>
     </div>
   )

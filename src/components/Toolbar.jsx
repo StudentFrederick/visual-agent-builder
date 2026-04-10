@@ -1,4 +1,4 @@
-export function Toolbar({ onAddNode, onRun, onClear, onSettings, canRun }) {
+export function Toolbar({ onAddNode, onAddOrchestrator, onRun, onClear, onSettings, canRun }) {
   return (
     <div className="h-12 bg-white border-b border-gray-200 flex items-center px-4 gap-2 shrink-0">
       <span className="font-semibold text-gray-800 mr-4 text-sm">
@@ -10,6 +10,13 @@ export function Toolbar({ onAddNode, onRun, onClear, onSettings, canRun }) {
         className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
       >
         + Add Node
+      </button>
+
+      <button
+        onClick={onAddOrchestrator}
+        className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded hover:bg-purple-700 transition-colors"
+      >
+        + Orchestrator
       </button>
 
       <button

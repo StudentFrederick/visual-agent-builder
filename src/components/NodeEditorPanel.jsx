@@ -52,6 +52,27 @@ export function NodeEditorPanel({ node, onChange, onClose }) {
         </div>
       </div>
 
+      {node.type === 'orchestratorNode' && (
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">
+            Max Rounds: {node.data.maxRounds || 5}
+          </label>
+          <input
+            type="range"
+            min="1"
+            max="20"
+            step="1"
+            className="w-full accent-purple-500"
+            value={node.data.maxRounds || 5}
+            onChange={e => onChange(node.id, { maxRounds: parseInt(e.target.value) })}
+          />
+          <div className="flex justify-between text-xs text-gray-400 mt-0.5">
+            <span>1</span>
+            <span>20</span>
+          </div>
+        </div>
+      )}
+
       {node.data.output && (
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Output</label>

@@ -24,6 +24,7 @@ export default function App() {
     onEdgesChange,
     onConnect,
     addNode,
+    addOrchestratorNode,
     updateNodeData,
     clearFlow
   } = useFlow()
@@ -69,6 +70,7 @@ export default function App() {
 
       <Toolbar
         onAddNode={addNode}
+        onAddOrchestrator={addOrchestratorNode}
         onRun={handleRun}
         onClear={handleClear}
         onSettings={() => setShowSettings(true)}
