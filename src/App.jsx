@@ -26,10 +26,12 @@ export default function App() {
     addNode,
     addOrchestratorNode,
     updateNodeData,
+    activateEdges,
+    resetEdgeStyles,
     clearFlow
   } = useFlow()
 
-  const { run, isRunning } = useRunner({ nodes, edges, updateNodeData })
+  const { run, isRunning } = useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles })
 
   const handleSaveKey = useCallback(key => {
     localStorage.setItem(API_KEY_STORAGE, key)

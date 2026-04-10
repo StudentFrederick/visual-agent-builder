@@ -82,6 +82,29 @@ export function useFlow() {
     )
   }, [])
 
+  const activateEdges = useCallback((sourceId, targetIds, active) => {
+    setEdges(es =>
+      es.map(e => {
+        if (e.source === sourceId && targetIds.includes(e.target)) {
+          return {
+            ...e,
+            animated: active,
+            style: active
+              ? { stroke: '#a855f7', strokeWidth: 2.5 }
+              : { stroke: undefined, strokeWidth: undefined }
+          }
+        }
+        return e
+      })
+    )
+  }, [])
+
+  const resetEdgeStyles = useCallback(() => {
+    setEdges(es =>
+      es.map(e => ({ ...e, animated: false, style: {} }))
+    )
+  }, [])
+
   const clearFlow = useCallback(() => {
     setNodes([])
     setEdges([])
@@ -96,6 +119,8 @@ export function useFlow() {
     addNode,
     addOrchestratorNode,
     updateNodeData,
+    activateEdges,
+    resetEdgeStyles,
     clearFlow
   }
 }

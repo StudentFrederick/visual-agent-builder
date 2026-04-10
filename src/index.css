@@ -1,3 +1,21 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Glowing animated edges when orchestrator calls a subagent */
+.react-flow__edge.animated path {
+  stroke: #a855f7;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px #a855f7) drop-shadow(0 0 8px #c084fc);
+}
+
+/* Status badge styling */
+.status-badge {
+  @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium;
+}
+
+/* Thinking bubble */
+.thinking-bubble {
+  @apply text-xs text-purple-700 bg-purple-100 border border-purple-200 rounded-md px-2 py-1.5 mt-1 italic;
+  @apply max-h-20 overflow-y-auto;
+}

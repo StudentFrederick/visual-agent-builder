@@ -7,8 +7,16 @@ const statusStyles = {
   error: 'border-red-400 bg-red-50'
 }
 
+const statusBadges = {
+  idle: { label: 'Idle', color: 'bg-gray-200 text-gray-600' },
+  running: { label: 'Working', color: 'bg-yellow-200 text-yellow-800' },
+  done: { label: 'Done', color: 'bg-green-200 text-green-700' },
+  error: { label: 'Error', color: 'bg-red-200 text-red-700' }
+}
+
 export function AgentNode({ data, selected }) {
   const style = statusStyles[data.status] ?? statusStyles.idle
+  const badge = statusBadges[data.status] ?? statusBadges.idle
 
   return (
     <div
@@ -18,12 +26,17 @@ export function AgentNode({ data, selected }) {
     >
       <Handle type="target" position={Position.Left} />
 
-      <div className="font-semibold text-sm text-gray-800 truncate mb-1">
-        {data.name || 'Agent'}
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-semibold text-sm text-gray-800 truncate">
+          {data.name || 'Agent'}
+        </span>
+        <span className={`status-badge shrink-0 ${badge.color}`}>
+          {badge.label}
+        </span>
       </div>
 
       {data.status === 'running' && (
-        <div className="text-xs text-yellow-600 animate-pulse">Running…</div>
+        <div className="text-xs text-yellow-600 animate-pulse">Processing…</div>
       )}
 
       {data.status === 'error' && (

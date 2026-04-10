@@ -8,7 +8,7 @@ import {
   executeOrchestrator
 } from '../utils/orchestrator.js'
 
-export function useRunner({ nodes, edges, updateNodeData }) {
+export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles }) {
   const isRunning = useRef(false)
 
   const run = useCallback(
@@ -42,7 +42,9 @@ export function useRunner({ nodes, edges, updateNodeData }) {
                 subagentNodes: subagents,
                 userMessage: prevOutput,
                 onUpdate: data => updateNodeData(node.id, data),
-                onSubagentUpdate: (id, data) => updateNodeData(id, data)
+                onSubagentUpdate: (id, data) => updateNodeData(id, data),
+                onEdgeActivate: (sourceId, targetIds, active) =>
+                  activateEdges(sourceId, targetIds, active)
               })
             } else {
               // Regular agent: simple streaming call
@@ -64,9 +66,10 @@ export function useRunner({ nodes, edges, updateNodeData }) {
         }
       } finally {
         isRunning.current = false
+        resetEdgeStyles()
       }
     },
-    [nodes, edges, updateNodeData]
+    [nodes, edges, updateNodeData, activateEdges, resetEdgeStyles]
   )
 
   return { run, isRunning }

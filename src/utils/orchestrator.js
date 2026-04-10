@@ -89,6 +89,7 @@ export function buildTools(subagentNodes) {
  * @param {string} opts.userMessage - input from previous node in the chain
  * @param {(data: object) => void} opts.onUpdate - updates orchestrator node data
  * @param {(nodeId: string, data: object) => void} opts.onSubagentUpdate - updates subagent node data
+ * @param {(sourceId: string, targetIds: string[], active: boolean) => void} opts.onEdgeActivate - activates/deactivates edge glow
  * @returns {Promise<string>} the orchestrator's final text output
  */
 export async function executeOrchestrator({
@@ -97,20 +98,29 @@ export async function executeOrchestrator({
   subagentNodes,
   userMessage,
   onUpdate,
-  onSubagentUpdate
+  onSubagentUpdate,
+  onEdgeActivate
 }) {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
   const toolDefs = buildTools(subagentNodes)
   const tools = toolDefs.map(t => t.tool)
   const maxRounds = node.data.maxRounds || 5
+  const allSubagentIds = subagentNodes.map(n => n.id)
 
   const messages = [{ role: 'user', content: userMessage || 'Begin.' }]
   let round = 0
   let lastText = ''
 
+  // Track tool calls for result aggregation
+  const callLog = []
+
   while (round < maxRounds) {
     round++
-    onUpdate({ currentRound: round, output: lastText || `Round ${round}/${maxRounds}...` })
+    onUpdate({
+      currentRound: round,
+      status: 'thinking',
+      thinking: `Analyzing task (round ${round}/${maxRounds})...`
+    })
 
     const response = await client.messages.create({
       model: 'claude-sonnet-4-6',
@@ -121,18 +131,34 @@ export async function executeOrchestrator({
       tools: tools.length > 0 ? tools : undefined
     })
 
-    // Extract text from response
+    // Extract text (orchestrator's "thoughts" or final answer)
     const textBlocks = response.content.filter(b => b.type === 'text')
     if (textBlocks.length > 0) {
       lastText = textBlocks.map(b => b.text).join('\n')
-      onUpdate({ output: lastText })
     }
 
     // If no tool use, we're done
     const toolUseBlocks = response.content.filter(b => b.type === 'tool_use')
     if (toolUseBlocks.length === 0 || response.stop_reason === 'end_turn') {
-      return lastText
+      // Generate final report with aggregation
+      const report = buildReport(lastText, callLog)
+      onUpdate({ output: report, thinking: null, status: 'done' })
+      return report
     }
+
+    // Show thinking bubble with reasoning text
+    if (lastText) {
+      onUpdate({ thinking: lastText, output: lastText })
+    }
+
+    // Identify which subagent nodes are being called
+    const calledNodeIds = toolUseBlocks
+      .map(tu => toolDefs.find(t => t.name === tu.name)?.nodeId)
+      .filter(Boolean)
+
+    // Update status + activate glowing edges
+    onUpdate({ status: 'calling_subagent' })
+    onEdgeActivate(node.id, calledNodeIds, true)
 
     // Add assistant message to conversation history
     messages.push({ role: 'assistant', content: response.content })
@@ -163,6 +189,15 @@ export async function executeOrchestrator({
             onChunk: text => onSubagentUpdate(agentNode.id, { output: text })
           })
           onSubagentUpdate(agentNode.id, { status: 'done', output: result })
+
+          // Log for result aggregation
+          callLog.push({
+            agent: agentNode.data.name,
+            task: toolUse.input.task,
+            result: result.slice(0, 200) + (result.length > 200 ? '...' : ''),
+            success: true
+          })
+
           return {
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -170,6 +205,14 @@ export async function executeOrchestrator({
           }
         } catch (err) {
           onSubagentUpdate(agentNode.id, { status: 'error', output: err.message })
+
+          callLog.push({
+            agent: agentNode.data.name,
+            task: toolUse.input.task,
+            result: err.message,
+            success: false
+          })
+
           return {
             type: 'tool_result',
             tool_use_id: toolUse.id,
@@ -180,9 +223,30 @@ export async function executeOrchestrator({
       })
     )
 
+    // Deactivate glowing edges after tool calls complete
+    onEdgeActivate(node.id, calledNodeIds, false)
+
     messages.push({ role: 'user', content: toolResults })
   }
 
-  // maxRounds exceeded — return whatever we have
-  return lastText || 'Max rounds reached without a final response.'
+  // maxRounds exceeded — still build a report
+  const report = buildReport(
+    lastText || 'Max rounds reached without a final response.',
+    callLog
+  )
+  onUpdate({ output: report, thinking: null })
+  return report
+}
+
+/**
+ * Build a final report showing the orchestrator's answer + which agents were used.
+ */
+function buildReport(finalText, callLog) {
+  if (callLog.length === 0) return finalText
+
+  const summary = callLog
+    .map((c, i) => `${i + 1}. ${c.agent} — ${c.success ? 'OK' : 'FAILED'}: "${c.task}"`)
+    .join('\n')
+
+  return `${finalText}\n\n---\nAgents used (${callLog.length} calls):\n${summary}`
 }
