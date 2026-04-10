@@ -5,10 +5,6 @@
  * Node names may contain spaces.
  */
 
-// Matches {{<anything>.output}} or {{<anything>.output.<path>}}
-// Group 1: full content inside braces
-// We'll parse the capture manually to separate nodeName from path.
-const TEMPLATE_REGEX = /\{\{([^}]+\.output(?:\.[^}]+)?)\}\}/g
 
 /**
  * Parse a raw inner string like "My Node.output.user.name" into
