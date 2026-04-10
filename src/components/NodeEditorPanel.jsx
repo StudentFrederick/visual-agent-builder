@@ -51,6 +51,15 @@ export function NodeEditorPanel({ node, onChange, onClose }) {
           <span>Creative</span>
         </div>
       </div>
+
+      {node.data.output && (
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Output</label>
+          <div className="w-full border border-gray-200 rounded bg-gray-50 px-2 py-2 text-sm max-h-60 overflow-y-auto whitespace-pre-wrap text-gray-700 leading-relaxed">
+            {node.data.output}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
