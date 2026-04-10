@@ -51,7 +51,7 @@ function FlowCanvasInner({
       onNodeClick={(_, node) => onNodeClick(node)}
       nodeTypes={nodeTypes}
       fitView
-      deleteKeyCode="Delete"
+      deleteKeyCode={['Delete', 'Backspace']}
     >
       <Background />
       <Controls />
