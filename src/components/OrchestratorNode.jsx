@@ -1,4 +1,5 @@
 import { Handle, Position } from '@xyflow/react'
+import { VariableBadges } from './VariableBadges.jsx'
 
 const statusStyles = {
   idle: 'border-purple-300 bg-purple-50',
@@ -63,6 +64,12 @@ export function OrchestratorNode({ data, selected }) {
           {data.output}
         </div>
       )}
+
+      <VariableBadges
+        node={{ type: 'orchestratorNode', data }}
+        allNodes={data._allNodes || []}
+        onNavigateToNode={data._onNavigateToNode}
+      />
 
       <Handle type="source" position={Position.Right} />
     </div>

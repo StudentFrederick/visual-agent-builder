@@ -1,4 +1,5 @@
 import { Handle, Position } from '@xyflow/react'
+import { VariableBadges } from './VariableBadges.jsx'
 
 const statusStyles = {
   idle: 'border-gray-300 bg-white',
@@ -51,6 +52,12 @@ export function AgentNode({ data, selected }) {
           {data.output}
         </div>
       )}
+
+      <VariableBadges
+        node={{ type: 'agentNode', data }}
+        allNodes={data._allNodes || []}
+        onNavigateToNode={data._onNavigateToNode}
+      />
 
       <Handle type="source" position={Position.Right} />
     </div>

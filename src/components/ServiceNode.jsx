@@ -1,4 +1,5 @@
 import { Handle, Position } from '@xyflow/react'
+import { VariableBadges } from './VariableBadges.jsx'
 import { SERVICE_TYPES } from '../utils/service-registry.js'
 
 const statusStyles = {
@@ -60,6 +61,12 @@ export function ServiceNode({ data, selected }) {
           {data.output}
         </div>
       )}
+
+      <VariableBadges
+        node={{ type: 'serviceNode', data }}
+        allNodes={data._allNodes || []}
+        onNavigateToNode={data._onNavigateToNode}
+      />
 
       <Handle type="source" position={Position.Right} />
     </div>
