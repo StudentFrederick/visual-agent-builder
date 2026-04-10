@@ -28,16 +28,23 @@ export function useFlow() {
   const [edges, setEdges] = useState(() => loadFlow().edges)
 
   useEffect(() => {
-    // Use a cycle-safe serializer — React Flow injects internal refs into node/edge objects
-    const seen = new WeakSet()
-    const json = JSON.stringify({ nodes, edges }, (key, value) => {
-      if (typeof value === 'object' && value !== null) {
-        if (seen.has(value)) return undefined
-        seen.add(value)
-      }
-      return value
-    })
-    localStorage.setItem(FLOW_KEY, json)
+    try {
+      // Only persist fields we own — React Flow adds internals (cycles, BigInts) we can't serialize
+      const cleanNodes = nodes.map(n => ({
+        id: n.id,
+        type: n.type,
+        position: { x: n.position?.x ?? 0, y: n.position?.y ?? 0 },
+        data: JSON.parse(JSON.stringify(n.data ?? {}, (_, v) =>
+          typeof v === 'bigint' ? Number(v) : v
+        ))
+      }))
+      const cleanEdges = edges.map(e => ({
+        id: e.id, source: e.source, target: e.target
+      }))
+      localStorage.setItem(FLOW_KEY, JSON.stringify({ nodes: cleanNodes, edges: cleanEdges }))
+    } catch (err) {
+      console.warn('Failed to persist flow:', err)
+    }
   }, [nodes, edges])
 
   const onNodesChange = useCallback(
