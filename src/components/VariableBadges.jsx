@@ -24,7 +24,7 @@ export function VariableBadges({ node, allNodes, onNavigateToNode }) {
     <div className="border-t border-gray-200 mt-2 pt-1.5">
       {visible.map((v, i) => (
         <button
-          key={i}
+          key={`${v.nodeName}-${v.path}-${i}`}
           onClick={(e) => { e.stopPropagation(); handleClick(v) }}
           className={`block w-full text-left text-[10px] truncate px-0.5 py-0.5 rounded hover:bg-gray-100 cursor-pointer ${
             v.valid ? 'text-gray-400' : 'text-red-500'
@@ -46,9 +46,13 @@ export function VariableBadges({ node, allNodes, onNavigateToNode }) {
           {showTooltip && (
             <div className="absolute bottom-full left-0 mb-1 bg-gray-800 text-white text-[10px] rounded px-2 py-1.5 shadow-lg z-50 whitespace-nowrap">
               {validated.slice(MAX_VISIBLE).map((v, i) => (
-                <div key={i} className={v.valid ? '' : 'text-red-300'}>
+                <button
+                  key={`${v.nodeName}-${v.path}-${i}`}
+                  onClick={(e) => { e.stopPropagation(); handleClick(v) }}
+                  className={`block w-full text-left hover:opacity-75 ${v.valid ? '' : 'text-red-300'}`}
+                >
                   {v.valid ? '←' : '⚠'} {v.nodeName}.output{v.path ? `.${v.path}` : ''}
-                </div>
+                </button>
               ))}
             </div>
           )}
