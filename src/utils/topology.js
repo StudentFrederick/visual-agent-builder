@@ -6,6 +6,16 @@
  * @throws {Error} if a cycle is detected
  */
 export function topologicalSort(nodes, edges) {
+  const nodeIds = new Set(nodes.map(n => n.id))
+  for (const edge of edges) {
+    if (!nodeIds.has(edge.source)) {
+      throw new Error(`Edge references unknown source node: ${edge.source}`)
+    }
+    if (!nodeIds.has(edge.target)) {
+      throw new Error(`Edge references unknown target node: ${edge.target}`)
+    }
+  }
+
   const inDegree = {}
   const graph = {}
 
