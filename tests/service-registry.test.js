@@ -53,6 +53,15 @@ describe('Slack service', () => {
     const defaults = SERVICE_TYPES.slack.defaultConfig
     expect(defaults.message).toBe('')
   })
+
+  it('slack execute throws on missing webhook URL', async () => {
+    const originalLS = globalThis.localStorage
+    globalThis.localStorage = { getItem: () => null }
+    await expect(
+      SERVICE_TYPES.slack.execute({ message: 'hello' }, 'test')
+    ).rejects.toThrow('Slack webhook URL not configured')
+    globalThis.localStorage = originalLS
+  })
 })
 
 describe('GitHub Issue service', () => {
