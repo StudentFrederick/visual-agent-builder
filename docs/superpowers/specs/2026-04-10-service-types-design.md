@@ -188,7 +188,7 @@ The current single-field modal becomes a tabbed interface:
 - **Slack:** Webhook URL field
 - **GitHub:** Personal Access Token field
 - **Email:** Resend API Key field
-- **Sheets:** Google Sheets API Key field
+- **Sheets:** Google Sheets API Key field + helptekst: *"Your spreadsheet must be shared with 'Anyone with the link' for API key access to work."*
 
 Each tab loads/saves its own localStorage key independently. The "Save" button saves the currently visible tab's value.
 
