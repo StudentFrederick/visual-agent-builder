@@ -217,6 +217,72 @@ onDone?.(fullText)
 
 ---
 
+### Orchestrator (`src/utils/orchestrator.js`)
+
+Implements the multi-turn agentic loop that allows an OrchestratorNode to autonomously delegate work to connected AgentNodes via Claude's tool use API.
+
+#### Exported Functions
+
+##### `sanitizeToolName(name) → string`
+
+Converts a node name into a valid Anthropic tool name: lowercase, spaces to underscores, strip non-alphanumeric, max 64 chars. Returns `"agent"` for empty input.
+
+##### `getOrchestratorSubagentIds(nodes, edges) → Set<string>`
+
+Returns the IDs of all AgentNodes that are targets of outgoing edges from any orchestrator node. These nodes are skipped in the main runner loop because the orchestrator handles their execution internally.
+
+##### `getSubagentNodes(orchestratorId, nodes, edges) → Node[]`
+
+Returns the AgentNode objects connected via outgoing edges from a specific orchestrator. Only returns nodes with `type === 'agentNode'` (flat architecture — no nested orchestrators).
+
+##### `buildTools(subagentNodes) → Array<{nodeId, name, tool}>`
+
+Converts an array of AgentNodes into Anthropic tool definitions:
+- `name`: sanitized node name (deduplicates by appending node ID suffix on collision)
+- `description`: the node's system prompt (falls back to `"Agent: {name}"` if empty)
+- `input_schema`: `{ task: string }` — the task to delegate
+
+##### `executeOrchestrator(opts) → Promise<string>`
+
+Runs the multi-turn agentic loop.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `opts.apiKey` | `string` | Anthropic API key |
+| `opts.node` | `Node` | The orchestrator node |
+| `opts.subagentNodes` | `Node[]` | Connected AgentNodes (become tools) |
+| `opts.userMessage` | `string` | Input from previous node in chain |
+| `opts.onUpdate` | `(data) => void` | Updates orchestrator node data (output, currentRound) |
+| `opts.onSubagentUpdate` | `(nodeId, data) => void` | Updates subagent node data (status, output) |
+
+**Loop Behavior:**
+
+```
+round = 0, messages = [{ user: prevOutput || "Begin." }]
+
+while round < maxRounds:
+  response = claude.messages.create({ system, messages, tools })
+
+  if stop_reason === "end_turn" (no tool calls):
+    return text → done
+
+  if tool_use blocks present:
+    execute all tool calls in parallel (Promise.all)
+    each tool call runs streamClaudeResponse on the matching AgentNode
+    append assistant + tool_result messages to conversation
+    round++
+
+if maxRounds exceeded:
+  return last text or "Max rounds reached"
+```
+
+- **Model**: `claude-sonnet-4-6` with `max_tokens: 4096` (higher than regular agents to accommodate tool reasoning)
+- **Parallel execution**: Multiple tool calls in a single response are executed concurrently via `Promise.all`
+- **Subagent visibility**: Subagent nodes update their status and output in real-time during execution
+- **Error resilience**: If a subagent fails, the error is returned as a `tool_result` with `is_error: true`, letting the orchestrator decide how to proceed
+
+---
+
 ## Hooks
 
 ### useFlow (`src/hooks/useFlow.js`)
@@ -305,14 +371,15 @@ useRunner({ nodes, edges, updateNodeData })
 1. **Guard**: If `isRunning.current` is `true`, return immediately (prevents double execution)
 2. **Lock**: Set `isRunning.current = true`
 3. **Sort**: `topologicalSort(nodes, edges)` determines execution order
-4. **Initialize**: `prevOutput = ''` (first node gets empty input)
-5. **For each node** (sequentially):
-   - Set node status to `'running'`, clear output
-   - `output = await streamClaudeResponse(...)` with node's config and `prevOutput`
+4. **Identify subagents**: `getOrchestratorSubagentIds(nodes, edges)` returns IDs of nodes managed by orchestrators — these are skipped in the main loop
+5. **Initialize**: `prevOutput = ''` (first node gets empty input)
+6. **For each node** (sequentially, skipping subagent nodes):
+   - If `orchestratorNode`: call `executeOrchestrator()` with connected subagents as tools
+   - If `agentNode`: call `streamClaudeResponse()` with node's config and `prevOutput`
    - `onChunk`: progressively update node's output (streaming UI)
    - On success: set status to `'done'`, assign `prevOutput = output`
-6. **On error**: set status to `'error'`, store error message, re-throw to halt chain
-7. **Finally**: Set `isRunning.current = false` (always, even on error)
+7. **On error**: set status to `'error'`, store error message, re-throw to halt chain
+8. **Finally**: Set `isRunning.current = false` (always, even on error)
 
 #### Error Behavior
 
@@ -363,6 +430,54 @@ Root component that composes all UI elements and manages application-level state
 │                                │              │
 └────────────────────────────────┴──────────────┘
          SettingsModal (overlay, conditional)
+```
+
+---
+
+### OrchestratorNode (`src/components/OrchestratorNode.jsx`)
+
+Custom React Flow node representing an orchestrator that delegates tasks to connected AgentNodes via tool use.
+
+#### Props
+
+| Prop | Type | Description |
+|---|---|---|
+| `data` | `object` | Node data: `name`, `systemPrompt`, `temperature`, `maxRounds`, `output`, `status`, `currentRound` |
+| `selected` | `boolean` | Whether the node is currently selected |
+
+#### Status Styles
+
+| Status | Border | Background |
+|---|---|---|
+| `idle` | `border-purple-300` | `bg-purple-50` |
+| `running` | `border-yellow-400` | `bg-yellow-50` |
+| `done` | `border-green-400` | `bg-green-50` |
+| `error` | `border-red-400` | `bg-red-50` |
+
+#### Visual Elements
+
+- **Purple diamond icon** (&#9670;) before the name to distinguish from regular agents
+- **Round counter**: Shows "Running (round 2/5)" during execution
+- **Selection ring**: Purple ring (`ring-2 ring-purple-500`) when selected
+- Same handles as AgentNode (target left, source right)
+
+#### Data Shape
+
+```js
+{
+  id: 'node-{timestamp}',
+  type: 'orchestratorNode',
+  position: { x, y },
+  data: {
+    name: 'Orchestrator',
+    systemPrompt: '',
+    temperature: 0.7,
+    maxRounds: 5,          // configurable 1-20
+    output: '',
+    status: 'idle',
+    currentRound: 0        // updated during execution
+  }
+}
 ```
 
 ---
@@ -423,7 +538,7 @@ Wrapper around React Flow that renders the node graph with controls.
 
 #### Configuration
 
-- **Node types**: Registers `{ agentNode: AgentNode }` as custom node type
+- **Node types**: Registers `{ agentNode: AgentNode, orchestratorNode: OrchestratorNode }` as custom node types
 - **Fit view**: Automatically fits all nodes in view on load
 - **Delete key**: `"Delete"` key removes selected nodes/edges
 - **Sub-components**:
@@ -447,13 +562,14 @@ Sidebar panel for configuring the selected node's properties.
 
 #### Fields
 
-| Field | Input Type | Data Property |
-|---|---|---|
-| Name | Text input | `data.name` |
-| System Prompt | Textarea (height 40) | `data.systemPrompt` |
-| Temperature | Range slider (0.0–1.0, step 0.1) | `data.temperature` |
+| Field | Input Type | Data Property | Shown for |
+|---|---|---|---|
+| Name | Text input | `data.name` | All nodes |
+| System Prompt | Textarea (height 40) | `data.systemPrompt` | All nodes |
+| Temperature | Range slider (0.0–1.0, step 0.1) | `data.temperature` | All nodes |
+| Max Rounds | Range slider (1–20, step 1) | `data.maxRounds` | Orchestrator only |
 
-The temperature slider shows labels "Precise" (0.0) and "Creative" (1.0) at the extremes.
+The temperature slider shows labels "Precise" (0.0) and "Creative" (1.0) at the extremes. The Max Rounds slider only appears when an `orchestratorNode` is selected.
 
 ---
 
@@ -476,6 +592,7 @@ Top bar with action buttons and application title.
 | Button | Color | Action |
 |---|---|---|
 | "+ Add Node" | Blue | Adds new agent node |
+| "+ Orchestrator" | Purple | Adds new orchestrator node |
 | "Run" | Green (disabled when `!canRun`) | Executes the flow |
 | "Clear" | Gray | Clears the canvas |
 | "Settings" | Gray (right-aligned) | Opens API key modal |
@@ -552,6 +669,10 @@ Plain string stored directly in localStorage.
 | Cycle in graph | `topologicalSort` throws before any API calls |
 | Edge references missing node | `topologicalSort` throws with descriptive error |
 | Corrupt localStorage | `loadFlow()` catches parse errors, returns empty state |
+| Orchestrator has no subagents | Executes as regular agent (no tools passed) |
+| Subagent fails during tool call | Error returned as `tool_result` with `is_error: true`; orchestrator decides next step |
+| Orchestrator hits maxRounds | Returns last text content, sets status to `'done'` |
+| Orchestrator connected to orchestrator | Target is ignored (only `agentNode` targets become tools) |
 
 ---
 
@@ -572,6 +693,22 @@ Framework: **Vitest**
 | Self-loop | Detected as cycle |
 | Unknown source node | Throws descriptive error |
 | Unknown target node | Throws descriptive error |
+
+### Orchestrator Unit Tests (`tests/orchestrator.test.js`)
+
+| Test | Assertion |
+|---|---|
+| sanitizeToolName: lowercases + underscores | `"My Agent"` → `"my_agent"` |
+| sanitizeToolName: strips special chars | `"Agent #1 (test)"` → `"agent_1_test"` |
+| sanitizeToolName: empty fallback | `""` → `"agent"` |
+| sanitizeToolName: truncates at 64 chars | Long string → 64 chars |
+| getOrchestratorSubagentIds: finds targets | Returns agent IDs, excludes standalone |
+| getOrchestratorSubagentIds: empty when no orchestrators | Returns empty set |
+| getOrchestratorSubagentIds: ignores orch-to-orch | Returns empty set |
+| getSubagentNodes: finds connected agents | Returns correct nodes |
+| buildTools: creates tool definitions | Correct name, description, schema |
+| buildTools: deduplicates names | Appends ID suffix on collision |
+| buildTools: fallback description | Uses `"Agent: {name}"` when prompt empty |
 
 Run tests:
 

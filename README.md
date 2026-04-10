@@ -11,6 +11,7 @@ Visual Agent Builder lets you:
 - **Run the chain** — Execute nodes in topological order; each node's output becomes the next node's input
 - **Stream responses** — See Claude's output appear in real-time on each node
 - **Persist your work** — Flows are saved to localStorage and restored on reload
+- **Orchestrate multi-agent workflows** — Use Orchestrator nodes that autonomously delegate tasks to connected agents via Claude's tool use API, with configurable multi-turn agentic loops
 
 ## Tech Stack
 
@@ -61,11 +62,19 @@ npm test
 
 ## Usage
 
+### Basic Agent Chain
 1. **Add nodes** — Click "+ Add Node" in the toolbar to place agent nodes on the canvas
 2. **Configure** — Click a node to open the editor panel. Set its name, system prompt, and temperature
 3. **Connect** — Drag from the right handle of one node to the left handle of another to create a data flow
 4. **Run** — Click "Run" to execute the chain. The first node receives `"Begin."` as input; subsequent nodes receive the previous node's output
 5. **Observe** — Watch streaming output appear on each node in real-time. Nodes turn yellow while running, green when done, red on error
+
+### Multi-Agent Orchestration
+1. **Add an orchestrator** — Click "+ Orchestrator" to place a purple orchestrator node
+2. **Add subagents** — Add regular agent nodes and connect them **from** the orchestrator's right handle **to** each agent's left handle
+3. **Configure the orchestrator** — Give it a system prompt describing its goal (e.g., "You are a project manager. Research the topic, then write a report."). Set Max Rounds (1–20) to control how many turns it can take
+4. **Configure subagents** — Each agent gets its own system prompt and acts as a tool the orchestrator can call
+5. **Run** — The orchestrator uses Claude's tool use API to decide which agents to call, can run them in parallel, receives their results, and can call more agents in subsequent rounds until it produces a final answer
 
 ## Project Structure
 
@@ -82,17 +91,20 @@ visual-agent-builder/
 │   ├── App.jsx                   # Root component — orchestrates all panels
 │   ├── components/
 │   │   ├── AgentNode.jsx         # Custom React Flow node with status indicators
+│   │   ├── OrchestratorNode.jsx  # Orchestrator node with purple styling + round counter
 │   │   ├── FlowCanvas.jsx        # React Flow canvas wrapper
 │   │   ├── NodeEditorPanel.jsx   # Sidebar for editing selected node
 │   │   ├── SettingsModal.jsx     # API key entry modal
-│   │   └── Toolbar.jsx           # Action buttons (Add, Run, Clear, Settings)
+│   │   └── Toolbar.jsx           # Action buttons (Add, Orchestrator, Run, Clear, Settings)
 │   ├── hooks/
 │   │   ├── useFlow.js            # Flow state + localStorage persistence
-│   │   └── useRunner.js          # Topological execution + Claude streaming
+│   │   └── useRunner.js          # Topological execution + Claude streaming + orchestrator dispatch
 │   └── utils/
 │       ├── claude.js             # Streaming Claude API wrapper
+│       ├── orchestrator.js       # Orchestrator agentic loop + tool construction
 │       └── topology.js           # Topological sort (Kahn's algorithm)
 └── tests/
+    ├── orchestrator.test.js      # Unit tests for orchestrator utilities
     └── topology.test.js          # Unit tests for topological sort
 ```
 
@@ -102,9 +114,9 @@ The app is a **single-page React application with no backend**. All Claude API c
 
 Three layers:
 
-1. **Canvas Layer** — React Flow renders the node graph. Users place `AgentNode` components and connect them via edges.
+1. **Canvas Layer** — React Flow renders the node graph. Users place `AgentNode` and `OrchestratorNode` components and connect them via edges.
 2. **State Layer** — The `useFlow` hook manages nodes/edges state and persists to localStorage on every change.
-3. **Runtime Layer** — The `useRunner` hook topologically sorts the graph, then executes each node sequentially via the Claude streaming API.
+3. **Runtime Layer** — The `useRunner` hook topologically sorts the graph, executes regular agent nodes sequentially via the Claude streaming API, and delegates orchestrator nodes to a multi-turn agentic loop that uses Claude's tool use API to autonomously call connected subagents.
 
 See [TECHNICAL_DOCS.md](./TECHNICAL_DOCS.md) for detailed technical documentation.
 
