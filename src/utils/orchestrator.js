@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { streamClaudeResponse } from './claude.js'
+import { executeService, getServiceToolDescription } from './service-registry.js'
 
 /**
  * Sanitize a node name into a valid Anthropic tool name.
@@ -14,60 +15,72 @@ export function sanitizeToolName(name) {
   return sanitized || 'agent'
 }
 
+/** Node types that an orchestrator can control as tools. */
+const TOOL_NODE_TYPES = new Set(['agentNode', 'serviceNode'])
+
 /**
- * Get all AgentNode IDs that are subagents of any orchestrator node.
+ * Get all node IDs that are sub-nodes of any orchestrator.
  * These should be skipped in the main sequential runner loop.
  */
 export function getOrchestratorSubagentIds(nodes, edges) {
   const orchestratorIds = new Set(
     nodes.filter(n => n.type === 'orchestratorNode').map(n => n.id)
   )
-  const subagentIds = new Set()
+  const subIds = new Set()
   for (const edge of edges) {
     if (orchestratorIds.has(edge.source)) {
       const target = nodes.find(n => n.id === edge.target)
-      if (target && target.type === 'agentNode') {
-        subagentIds.add(target.id)
+      if (target && TOOL_NODE_TYPES.has(target.type)) {
+        subIds.add(target.id)
       }
     }
   }
-  return subagentIds
+  return subIds
 }
 
 /**
- * Get the subagent nodes connected via outgoing edges from an orchestrator.
+ * Get all tool-capable nodes (agents + services) connected from an orchestrator.
  */
 export function getSubagentNodes(orchestratorId, nodes, edges) {
   const targetIds = edges
     .filter(e => e.source === orchestratorId)
     .map(e => e.target)
-  return nodes.filter(n => targetIds.includes(n.id) && n.type === 'agentNode')
+  return nodes.filter(n => targetIds.includes(n.id) && TOOL_NODE_TYPES.has(n.type))
 }
 
 /**
- * Build Anthropic tool definitions from subagent nodes.
- * Returns array of { nodeId, name, tool } objects.
+ * Build Anthropic tool definitions from sub-nodes (agents + services).
+ * Returns array of { nodeId, nodeType, name, tool } objects.
  */
-export function buildTools(subagentNodes) {
+export function buildTools(subNodes) {
   const usedNames = new Set()
-  return subagentNodes.map(node => {
+  return subNodes.map(node => {
     let name = sanitizeToolName(node.data.name)
     if (usedNames.has(name)) {
       name = `${name}_${node.id.slice(-4)}`
     }
     usedNames.add(name)
+
+    // Different tool schemas for agents vs services
+    const isService = node.type === 'serviceNode'
+
     return {
       nodeId: node.id,
+      nodeType: node.type,
       name,
       tool: {
         name,
-        description: node.data.systemPrompt || `Agent: ${node.data.name}`,
+        description: isService
+          ? getServiceToolDescription(node)
+          : (node.data.systemPrompt || `Agent: ${node.data.name}`),
         input_schema: {
           type: 'object',
           properties: {
             task: {
               type: 'string',
-              description: 'The task to delegate to this agent'
+              description: isService
+                ? 'The JSON payload or data to send to this service'
+                : 'The task to delegate to this agent'
             }
           },
           required: ['task']
@@ -85,7 +98,7 @@ export function buildTools(subagentNodes) {
  * @param {object} opts
  * @param {string} opts.apiKey
  * @param {object} opts.node - the orchestrator node
- * @param {Array} opts.subagentNodes - connected AgentNodes
+ * @param {Array} opts.subagentNodes - connected tool nodes (AgentNodes + ServiceNodes)
  * @param {string} opts.userMessage - input from previous node in the chain
  * @param {(data: object) => void} opts.onUpdate - updates orchestrator node data
  * @param {(nodeId: string, data: object) => void} opts.onSubagentUpdate - updates subagent node data
@@ -175,24 +188,37 @@ export async function executeOrchestrator({
           }
         }
 
-        const agentNode = subagentNodes.find(n => n.id === toolDef.nodeId)
+        const subNode = subagentNodes.find(n => n.id === toolDef.nodeId)
 
-        // Update subagent node UI
-        onSubagentUpdate(agentNode.id, { status: 'running', output: '' })
+        // Update sub-node UI
+        onSubagentUpdate(subNode.id, { status: 'running', output: '' })
 
         try {
-          const result = await streamClaudeResponse({
-            apiKey,
-            systemPrompt: agentNode.data.systemPrompt,
-            userMessage: toolUse.input.task,
-            temperature: agentNode.data.temperature,
-            onChunk: text => onSubagentUpdate(agentNode.id, { output: text })
-          })
-          onSubagentUpdate(agentNode.id, { status: 'done', output: result })
+          let result
+
+          if (subNode.type === 'serviceNode') {
+            // Execute service action (webhook, etc.)
+            result = await executeService(
+              subNode.data.serviceType,
+              subNode.data.serviceConfig,
+              toolUse.input.task
+            )
+          } else {
+            // Execute agent LLM call
+            result = await streamClaudeResponse({
+              apiKey,
+              systemPrompt: subNode.data.systemPrompt,
+              userMessage: toolUse.input.task,
+              temperature: subNode.data.temperature,
+              onChunk: text => onSubagentUpdate(subNode.id, { output: text })
+            })
+          }
+
+          onSubagentUpdate(subNode.id, { status: 'done', output: result })
 
           // Log for result aggregation
           callLog.push({
-            agent: agentNode.data.name,
+            agent: subNode.data.name,
             task: toolUse.input.task,
             result: result.slice(0, 200) + (result.length > 200 ? '...' : ''),
             success: true
@@ -204,10 +230,10 @@ export async function executeOrchestrator({
             content: result
           }
         } catch (err) {
-          onSubagentUpdate(agentNode.id, { status: 'error', output: err.message })
+          onSubagentUpdate(subNode.id, { status: 'error', output: err.message })
 
           callLog.push({
-            agent: agentNode.data.name,
+            agent: subNode.data.name,
             task: toolUse.input.task,
             result: err.message,
             success: false

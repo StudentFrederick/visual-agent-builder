@@ -2,6 +2,7 @@
 import { useCallback, useRef } from 'react'
 import { topologicalSort } from '../utils/topology.js'
 import { streamClaudeResponse } from '../utils/claude.js'
+import { executeService } from '../utils/service-registry.js'
 import {
   getOrchestratorSubagentIds,
   getSubagentNodes,
@@ -46,6 +47,13 @@ export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEd
                 onEdgeActivate: (sourceId, targetIds, active) =>
                   activateEdges(sourceId, targetIds, active)
               })
+            } else if (node.type === 'serviceNode') {
+              // Service node: execute HTTP/webhook action
+              output = await executeService(
+                node.data.serviceType,
+                node.data.serviceConfig,
+                prevOutput
+              )
             } else {
               // Regular agent: simple streaming call
               output = await streamClaudeResponse({

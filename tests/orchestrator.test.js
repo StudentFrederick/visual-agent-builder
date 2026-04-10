@@ -60,6 +60,21 @@ describe('getOrchestratorSubagentIds', () => {
     const ids = getOrchestratorSubagentIds(nodes, edges)
     expect(ids.size).toBe(0)
   })
+
+  it('includes ServiceNodes connected to orchestrators', () => {
+    const nodes = [
+      { id: 'orch', type: 'orchestratorNode', data: {} },
+      { id: 'agent1', type: 'agentNode', data: {} },
+      { id: 'svc1', type: 'serviceNode', data: {} }
+    ]
+    const edges = [
+      { source: 'orch', target: 'agent1' },
+      { source: 'orch', target: 'svc1' }
+    ]
+    const ids = getOrchestratorSubagentIds(nodes, edges)
+    expect(ids).toContain('agent1')
+    expect(ids).toContain('svc1')
+  })
 })
 
 describe('getSubagentNodes', () => {
@@ -114,5 +129,43 @@ describe('buildTools', () => {
     ]
     const result = buildTools(agents)
     expect(result[0].tool.description).toBe('Agent: Helper')
+  })
+
+  it('builds service tool with service description', () => {
+    const nodes = [
+      {
+        id: 's1',
+        type: 'serviceNode',
+        data: {
+          name: 'Inventory API',
+          serviceType: 'webhook',
+          serviceConfig: { url: 'https://api.example.com/inventory', method: 'POST' }
+        }
+      }
+    ]
+    const result = buildTools(nodes)
+    expect(result).toHaveLength(1)
+    expect(result[0].nodeType).toBe('serviceNode')
+    expect(result[0].tool.description).toContain('Webhook (HTTP)')
+    expect(result[0].tool.description).toContain('https://api.example.com/inventory')
+  })
+
+  it('builds mixed agent + service tools', () => {
+    const nodes = [
+      { id: 'a1', type: 'agentNode', data: { name: 'Writer', systemPrompt: 'Write things' } },
+      {
+        id: 's1',
+        type: 'serviceNode',
+        data: {
+          name: 'Slack Notify',
+          serviceType: 'webhook',
+          serviceConfig: { url: 'https://hooks.slack.com/x', method: 'POST' }
+        }
+      }
+    ]
+    const result = buildTools(nodes)
+    expect(result).toHaveLength(2)
+    expect(result[0].nodeType).toBe('agentNode')
+    expect(result[1].nodeType).toBe('serviceNode')
   })
 })

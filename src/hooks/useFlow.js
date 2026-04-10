@@ -76,6 +76,29 @@ export function useFlow() {
     ])
   }, [])
 
+  const addServiceNode = useCallback((serviceType = 'webhook') => {
+    const id = `node-${Date.now()}`
+    setNodes(ns => [
+      ...ns,
+      {
+        id,
+        type: 'serviceNode',
+        position: { x: 100 + ns.length * 240, y: 150 },
+        data: {
+          name: 'Webhook',
+          serviceType,
+          serviceConfig: {
+            url: '',
+            method: 'POST',
+            headers: '{"Content-Type": "application/json"}'
+          },
+          output: '',
+          status: 'idle'
+        }
+      }
+    ])
+  }, [])
+
   const updateNodeData = useCallback((id, data) => {
     setNodes(ns =>
       ns.map(n => (n.id === id ? { ...n, data: { ...n.data, ...data } } : n))
@@ -118,6 +141,7 @@ export function useFlow() {
     onConnect,
     addNode,
     addOrchestratorNode,
+    addServiceNode,
     updateNodeData,
     activateEdges,
     resetEdgeStyles,

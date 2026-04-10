@@ -25,6 +25,7 @@ export default function App() {
     onConnect,
     addNode,
     addOrchestratorNode,
+    addServiceNode,
     updateNodeData,
     activateEdges,
     resetEdgeStyles,
@@ -73,6 +74,7 @@ export default function App() {
       <Toolbar
         onAddNode={addNode}
         onAddOrchestrator={addOrchestratorNode}
+        onAddService={addServiceNode}
         onRun={handleRun}
         onClear={handleClear}
         onSettings={() => setShowSettings(true)}
