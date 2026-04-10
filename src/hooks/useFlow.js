@@ -114,7 +114,9 @@ export function useFlow() {
     ])
   }, [])
 
-  const addServiceNode = useCallback((serviceType = 'webhook') => {
+  const addServiceNode = useCallback((serviceType) => {
+    // Guard: if called directly from onClick, the event object is passed — ignore it
+    if (!serviceType || typeof serviceType !== 'string') serviceType = 'webhook'
     const id = `node-${Date.now()}`
     setNodes(ns => [
       ...ns,

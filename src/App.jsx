@@ -79,7 +79,7 @@ export default function App() {
       <Toolbar
         onAddNode={addNode}
         onAddOrchestrator={addOrchestratorNode}
-        onAddService={addServiceNode}
+        onAddService={() => addServiceNode()}
         onRun={() => handleRun('')}
         onClear={handleClear}
         onSettings={() => setShowSettings(true)}
