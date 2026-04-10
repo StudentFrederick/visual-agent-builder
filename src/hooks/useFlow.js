@@ -28,10 +28,16 @@ export function useFlow() {
   const [edges, setEdges] = useState(() => loadFlow().edges)
 
   useEffect(() => {
-    // Strip React Flow internal properties to avoid cyclic JSON errors
-    const cleanNodes = nodes.map(({ id, type, position, data }) => ({ id, type, position, data }))
-    const cleanEdges = edges.map(({ id, source, target, animated, style }) => ({ id, source, target, animated, style }))
-    localStorage.setItem(FLOW_KEY, JSON.stringify({ nodes: cleanNodes, edges: cleanEdges }))
+    // Use a cycle-safe serializer — React Flow injects internal refs into node/edge objects
+    const seen = new WeakSet()
+    const json = JSON.stringify({ nodes, edges }, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) return undefined
+        seen.add(value)
+      }
+      return value
+    })
+    localStorage.setItem(FLOW_KEY, json)
   }, [nodes, edges])
 
   const onNodesChange = useCallback(
