@@ -29,12 +29,26 @@ export function useFlow() {
 
   useEffect(() => {
     try {
-      // Only persist fields we own — React Flow adds internals (cycles) we can't serialize
+      // Whitelist only the data fields we define per node type
+      const cleanData = d => {
+        if (!d) return {}
+        const { name, systemPrompt, temperature, maxRounds, serviceType, serviceConfig,
+                output, status, currentRound, thinking } = d
+        const clean = { name, output, status }
+        if (systemPrompt !== undefined) clean.systemPrompt = systemPrompt
+        if (temperature !== undefined) clean.temperature = temperature
+        if (maxRounds !== undefined) clean.maxRounds = maxRounds
+        if (currentRound !== undefined) clean.currentRound = currentRound
+        if (thinking !== undefined) clean.thinking = thinking
+        if (serviceType !== undefined) clean.serviceType = serviceType
+        if (serviceConfig !== undefined) clean.serviceConfig = { ...serviceConfig }
+        return clean
+      }
       const cleanNodes = nodes.map(n => ({
         id: n.id,
         type: n.type,
         position: { x: n.position?.x ?? 0, y: n.position?.y ?? 0 },
-        data: { ...n.data }
+        data: cleanData(n.data)
       }))
       const cleanEdges = edges.map(e => ({
         id: e.id, source: e.source, target: e.target
