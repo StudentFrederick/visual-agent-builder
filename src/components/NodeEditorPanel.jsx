@@ -9,7 +9,7 @@ export function NodeEditorPanel({ node, onChange, onClose }) {
 
   const updateConfig = (key, value) => {
     onChange(node.id, {
-      serviceConfig: { ...node.data.serviceConfig, [key]: value }
+      serviceConfig: { ...(node.data.serviceConfig || {}), [key]: value }
     })
   }
 

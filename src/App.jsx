@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Toolbar } from './components/Toolbar.jsx'
 import { FlowCanvas } from './components/FlowCanvas.jsx'
 import { NodeEditorPanel } from './components/NodeEditorPanel.jsx'
@@ -15,7 +15,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(
     () => !localStorage.getItem(API_KEY_STORAGE)
   )
-  const [selectedNode, setSelectedNode] = useState(null)
+  const [selectedNodeId, setSelectedNodeId] = useState(null)
 
   const {
     nodes,
@@ -34,6 +34,12 @@ export default function App() {
 
   const { run, isRunning } = useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles })
 
+  // Derive selectedNode from nodes array — always in sync
+  const selectedNode = useMemo(
+    () => (selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null),
+    [nodes, selectedNodeId]
+  )
+
   const handleSaveKey = useCallback(key => {
     localStorage.setItem(API_KEY_STORAGE, key)
     setApiKey(key)
@@ -49,22 +55,19 @@ export default function App() {
   }, [run, apiKey])
 
   const handleNodeClick = useCallback(node => {
-    setSelectedNode(node)
+    setSelectedNodeId(node.id)
   }, [])
 
   const handleNodeChange = useCallback(
     (id, data) => {
       updateNodeData(id, data)
-      setSelectedNode(prev =>
-        prev?.id === id ? { ...prev, data: { ...prev.data, ...data } } : prev
-      )
     },
     [updateNodeData]
   )
 
   const handleClear = useCallback(() => {
     clearFlow()
-    setSelectedNode(null)
+    setSelectedNodeId(null)
   }, [clearFlow])
 
   return (
@@ -93,7 +96,7 @@ export default function App() {
         <NodeEditorPanel
           node={selectedNode}
           onChange={handleNodeChange}
-          onClose={() => setSelectedNode(null)}
+          onClose={() => setSelectedNodeId(null)}
         />
       </div>
     </div>

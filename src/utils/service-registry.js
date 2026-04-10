@@ -7,7 +7,7 @@
 export const SERVICE_TYPES = {
   webhook: {
     label: 'Webhook (HTTP)',
-    icon: '\u{1F517}', // 🔗
+    icon: 'W',
     color: 'orange',
     description: 'Send an HTTP request to an external URL',
     configFields: [

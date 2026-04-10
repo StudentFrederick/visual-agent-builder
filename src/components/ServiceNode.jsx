@@ -31,7 +31,7 @@ export function ServiceNode({ data, selected }) {
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="text-orange-500 text-sm shrink-0" title="Service">
-            {service?.icon || '\u{2699}'}
+            {service?.icon || 'S'}
           </span>
           <span className="font-semibold text-sm text-gray-800 truncate">
             {data.name || 'Service'}
