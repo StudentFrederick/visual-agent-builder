@@ -63,4 +63,10 @@ describe('topologicalSort', () => {
     const edges = [{ source: 'unknown', target: 'a' }]
     expect(() => topologicalSort(nodes, edges)).toThrow('Edge references unknown source node: unknown')
   })
+
+  it('throws on edge with unknown target node', () => {
+    const nodes = [{ id: 'a', data: {} }]
+    const edges = [{ source: 'a', target: 'unknown' }]
+    expect(() => topologicalSort(nodes, edges)).toThrow('Edge references unknown target node: unknown')
+  })
 })
