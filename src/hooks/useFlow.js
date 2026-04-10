@@ -14,9 +14,8 @@ function loadFlow() {
 }
 
 export function useFlow() {
-  const initial = loadFlow()
-  const [nodes, setNodes] = useState(initial.nodes)
-  const [edges, setEdges] = useState(initial.edges)
+  const [nodes, setNodes] = useState(() => loadFlow().nodes)
+  const [edges, setEdges] = useState(() => loadFlow().edges)
 
   useEffect(() => {
     localStorage.setItem(FLOW_KEY, JSON.stringify({ nodes, edges }))

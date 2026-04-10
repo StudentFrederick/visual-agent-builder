@@ -37,10 +37,10 @@ export async function streamClaudeResponse({
       event.delta.type === 'text_delta'
     ) {
       fullText += event.delta.text
-      onChunk(fullText)
+      onChunk?.(fullText)
     }
   }
 
-  onDone(fullText)
+  onDone?.(fullText)
   return fullText
 }
