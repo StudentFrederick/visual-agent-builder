@@ -32,7 +32,7 @@ export function OrchestratorNode({ data, selected }) {
 
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-purple-600 text-sm shrink-0" title="Orchestrator">&#9670;</span>
+          <span className="text-purple-600 text-sm shrink-0" title="Orchestrator">&#129504;</span>
           <span className="font-semibold text-sm text-gray-800 truncate">
             {data.name || 'Orchestrator'}
           </span>

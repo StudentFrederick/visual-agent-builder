@@ -27,9 +27,12 @@ export function AgentNode({ data, selected }) {
       <Handle type="target" position={Position.Left} />
 
       <div className="flex items-center justify-between mb-1">
-        <span className="font-semibold text-sm text-gray-800 truncate">
-          {data.name || 'Agent'}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-blue-500 text-sm shrink-0" title="Agent">&#129302;</span>
+          <span className="font-semibold text-sm text-gray-800 truncate">
+            {data.name || 'Agent'}
+          </span>
+        </div>
         <span className={`status-badge shrink-0 ${badge.color}`}>
           {badge.label}
         </span>
