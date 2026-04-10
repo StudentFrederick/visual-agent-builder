@@ -205,3 +205,47 @@ describe('getServiceToolDescription', () => {
     expect(desc).toContain('(not configured)')
   })
 })
+
+describe('getServiceToolDescription for new types', () => {
+  it('builds description for slack service', () => {
+    const node = { data: { serviceType: 'slack', serviceConfig: { message: '' } } }
+    const desc = getServiceToolDescription(node)
+    expect(desc).toContain('Slack')
+  })
+
+  it('builds description for github service', () => {
+    const node = {
+      data: {
+        serviceType: 'github',
+        serviceConfig: { owner: 'user', repo: 'repo', title: '', body: '' }
+      }
+    }
+    const desc = getServiceToolDescription(node)
+    expect(desc).toContain('GitHub Issue')
+    expect(desc).toContain('user/repo')
+  })
+
+  it('builds description for email service', () => {
+    const node = {
+      data: {
+        serviceType: 'email',
+        serviceConfig: { to: 'test@example.com', subject: '', body: '' }
+      }
+    }
+    const desc = getServiceToolDescription(node)
+    expect(desc).toContain('Email')
+    expect(desc).toContain('test@example.com')
+  })
+
+  it('builds description for gsheets service', () => {
+    const node = {
+      data: {
+        serviceType: 'gsheets',
+        serviceConfig: { spreadsheetId: 'abc123', sheetName: 'Data', values: '' }
+      }
+    }
+    const desc = getServiceToolDescription(node)
+    expect(desc).toContain('Google Sheets')
+    expect(desc).toContain('Data')
+  })
+})

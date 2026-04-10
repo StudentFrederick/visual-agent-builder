@@ -255,7 +255,29 @@ export async function executeService(serviceType, config, input) {
 export function getServiceToolDescription(node) {
   const service = SERVICE_TYPES[node.data.serviceType]
   const label = service?.label || node.data.serviceType
-  const method = node.data.serviceConfig?.method || 'POST'
-  const url = node.data.serviceConfig?.url || '(not configured)'
-  return `${label}: ${method} ${url}. Send a JSON payload to this service.`
+  const config = node.data.serviceConfig || {}
+
+  switch (node.data.serviceType) {
+    case 'webhook': {
+      const method = config.method || 'POST'
+      const url = config.url || '(not configured)'
+      return `${label}: ${method} ${url}. Send a JSON payload to this service.`
+    }
+    case 'slack':
+      return `${label}: Send a message to a Slack channel.`
+    case 'github': {
+      const target = config.owner && config.repo ? `${config.owner}/${config.repo}` : '(not configured)'
+      return `${label}: Create an issue in ${target}.`
+    }
+    case 'email': {
+      const to = config.to || '(not configured)'
+      return `${label}: Send an email to ${to}.`
+    }
+    case 'gsheets': {
+      const sheet = config.sheetName || 'Sheet1'
+      return `${label}: Append a row to sheet "${sheet}".`
+    }
+    default:
+      return `${label}: Execute this service.`
+  }
 }
