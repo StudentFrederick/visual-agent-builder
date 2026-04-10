@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { Toolbar } from './components/Toolbar.jsx'
 import { FlowCanvas } from './components/FlowCanvas.jsx'
 import { NodeEditorPanel } from './components/NodeEditorPanel.jsx'
+import { InputBar } from './components/InputBar.jsx'
 import { SettingsModal } from './components/SettingsModal.jsx'
 import { useFlow } from './hooks/useFlow.js'
 import { useRunner } from './hooks/useRunner.js'
@@ -34,11 +35,12 @@ export default function App() {
 
   const { run, isRunning } = useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles })
 
-  // Derive selectedNode from nodes array — always in sync
   const selectedNode = useMemo(
     () => (selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null),
     [nodes, selectedNodeId]
   )
+
+  const canRun = !!apiKey && nodes.length > 0 && !isRunning.current
 
   const handleSaveKey = useCallback(key => {
     localStorage.setItem(API_KEY_STORAGE, key)
@@ -46,9 +48,9 @@ export default function App() {
     setShowSettings(false)
   }, [])
 
-  const handleRun = useCallback(async () => {
+  const handleRun = useCallback(async (initialInput = '') => {
     try {
-      await run(apiKey)
+      await run(apiKey, initialInput)
     } catch (err) {
       console.error('Run failed:', err)
     }
@@ -78,10 +80,10 @@ export default function App() {
         onAddNode={addNode}
         onAddOrchestrator={addOrchestratorNode}
         onAddService={addServiceNode}
-        onRun={handleRun}
+        onRun={() => handleRun('')}
         onClear={handleClear}
         onSettings={() => setShowSettings(true)}
-        canRun={!!apiKey && nodes.length > 0 && !isRunning.current}
+        canRun={canRun}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -99,6 +101,8 @@ export default function App() {
           onClose={() => setSelectedNodeId(null)}
         />
       </div>
+
+      <InputBar onRun={handleRun} canRun={canRun} />
     </div>
   )
 }

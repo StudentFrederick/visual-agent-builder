@@ -13,7 +13,7 @@ export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEd
   const isRunning = useRef(false)
 
   const run = useCallback(
-    async apiKey => {
+    async (apiKey, initialInput = '') => {
       if (isRunning.current) return
       isRunning.current = true
 
@@ -23,7 +23,7 @@ export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEd
         // Identify nodes that are subagents of an orchestrator — skip them in the main loop
         const subagentIds = getOrchestratorSubagentIds(nodes, edges)
 
-        let prevOutput = ''
+        let prevOutput = initialInput
 
         for (const node of sorted) {
           // Skip subagent nodes — they are executed by their orchestrator
