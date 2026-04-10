@@ -29,14 +29,12 @@ export function useFlow() {
 
   useEffect(() => {
     try {
-      // Only persist fields we own — React Flow adds internals (cycles, BigInts) we can't serialize
+      // Only persist fields we own — React Flow adds internals (cycles) we can't serialize
       const cleanNodes = nodes.map(n => ({
         id: n.id,
         type: n.type,
         position: { x: n.position?.x ?? 0, y: n.position?.y ?? 0 },
-        data: JSON.parse(JSON.stringify(n.data ?? {}, (_, v) =>
-          typeof v === 'bigint' ? Number(v) : v
-        ))
+        data: { ...n.data }
       }))
       const cleanEdges = edges.map(e => ({
         id: e.id, source: e.source, target: e.target
