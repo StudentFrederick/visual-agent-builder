@@ -7,16 +7,25 @@
 - [Utilities](#utilities)
   - [Topological Sort](#topological-sort-srcutilstopologyjs)
   - [Claude Streaming API](#claude-streaming-api-srcutilsclaudejs)
+  - [Orchestrator](#orchestrator-srcutilsorchestratorjs)
+  - [Template Engine](#template-engine-srcutilstemplatejs)
+  - [Service Registry](#service-registry-srcutilsservice-registryjs)
+  - [PDF Reader](#pdf-reader-srcutilspdf-readerjs)
 - [Hooks](#hooks)
   - [useFlow](#useflow-srchooksuseflowjs)
   - [useRunner](#userunner-srchooksuserunnerjs)
 - [Components](#components)
   - [App](#app-srcappjsx)
   - [AgentNode](#agentnode-srccomponentsagentnodejsx)
+  - [OrchestratorNode](#orchestratornode-srccomponentsorchestatornodejsx)
+  - [ServiceNode](#servicenode-srccomponentsservicenodejsx)
   - [FlowCanvas](#flowcanvas-srccomponentsflowcanvasjsx)
   - [NodeEditorPanel](#nodeeditorpanel-srccomponentsnodeeditorpaneljsx)
   - [Toolbar](#toolbar-srccomponentstoolbarjsx)
+  - [InputBar](#inputbar-srccomponentsinputbarjsx)
   - [SettingsModal](#settingsmodal-srccomponentssettingsmodaljsx)
+  - [VariableBadges](#variablebadges-srccomponentsvariablebadgesjsx)
+  - [ErrorBoundary](#errorboundary-srccomponentserrorboundaryjsx)
 - [Persistence Schema](#persistence-schema)
 - [Error Handling](#error-handling)
 - [Testing](#testing)
@@ -26,53 +35,64 @@
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                        Browser                          │
-│                                                         │
-│  ┌─────────────────────────────────────────────────┐    │
-│  │                   App.jsx                        │    │
-│  │  ┌─────────┐  ┌──────────┐  ┌───────────────┐  │    │
-│  │  │ Toolbar  │  │FlowCanvas│  │NodeEditorPanel│  │    │
-│  │  └────┬─────┘  │          │  └───────┬───────┘  │    │
-│  │       │        │ AgentNode│          │          │    │
-│  │       │        │ AgentNode│          │          │    │
-│  │       │        │ AgentNode│          │          │    │
-│  │       │        └─────┬────┘          │          │    │
-│  │       │              │               │          │    │
-│  │  ┌────▼──────────────▼───────────────▼───────┐  │    │
-│  │  │              useFlow (state)               │  │    │
-│  │  │   nodes[] ←→ edges[] ←→ localStorage      │  │    │
-│  │  └─────────────────┬─────────────────────────┘  │    │
-│  │                    │                             │    │
-│  │  ┌─────────────────▼─────────────────────────┐  │    │
-│  │  │            useRunner (execution)           │  │    │
-│  │  │  topologicalSort → streamClaudeResponse    │  │    │
-│  │  └─────────────────┬─────────────────────────┘  │    │
-│  └────────────────────┼─────────────────────────────┘    │
-│                       │                                   │
-│                       ▼                                   │
-│              Anthropic Claude API                         │
-│              (client-side streaming)                      │
-└─────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                          Browser                             │
+│                                                              │
+│  ┌────────────────────────────────────────────────────────┐  │
+│  │                       App.jsx                          │  │
+│  │                                                        │  │
+│  │  ┌──────────────────────────────────────────────────┐  │  │
+│  │  │                   Toolbar                        │  │  │
+│  │  │  [+Node] [+Orchestrator] [+Service] [▶Run] ...  │  │  │
+│  │  └──────────────────────────────────────────────────┘  │  │
+│  │                                                        │  │
+│  │  ┌─────────────────────────────┬────────────────────┐  │  │
+│  │  │       FlowCanvas            │  NodeEditorPanel   │  │  │
+│  │  │                             │                    │  │  │
+│  │  │   AgentNode ──→ AgentNode   │  Name / Prompt /   │  │  │
+│  │  │       ↑                     │  Temperature /     │  │  │
+│  │  │  OrchestratorNode           │  Service config    │  │  │
+│  │  │    ├──→ AgentNode           │                    │  │  │
+│  │  │    └──→ ServiceNode         │                    │  │  │
+│  │  └─────────────────────────────┴────────────────────┘  │  │
+│  │                                                        │  │
+│  │  ┌──────────────────────────────────────────────────┐  │  │
+│  │  │  InputBar — text input + PDF upload + Run btn    │  │  │
+│  │  └──────────────────────────────────────────────────┘  │  │
+│  │                                                        │  │
+│  │  ┌──────────────────────────────────────────────────┐  │  │
+│  │  │              useFlow (state layer)               │  │  │
+│  │  │   nodes[] ←→ edges[] ←→ localStorage (vab_flow) │  │  │
+│  │  └───────────────────────┬──────────────────────────┘  │  │
+│  │                          │                             │  │
+│  │  ┌───────────────────────▼──────────────────────────┐  │  │
+│  │  │           useRunner (runtime layer)              │  │  │
+│  │  │  topologicalSort → resolveTemplate →             │  │  │
+│  │  │  agentNode: streamClaudeResponse                 │  │  │
+│  │  │  orchestratorNode: executeOrchestrator            │  │  │
+│  │  │  serviceNode: executeService                     │  │  │
+│  │  └───────────────────────┬──────────────────────────┘  │  │
+│  └──────────────────────────┼──────────────────────────────┘  │
+│                             │                                 │
+│                             ▼                                 │
+│    Anthropic Claude API  |  External Services (Slack,         │
+│    (streaming + tool use)|  GitHub, Email, Google Sheets)     │
+└──────────────────────────────────────────────────────────────┘
 ```
 
-The application is structured in three distinct layers:
+### Three Node Types
 
-### 1. Presentation Layer (Components)
+| Node Type | Color | Purpose |
+|---|---|---|
+| **AgentNode** | Blue/gray | Executes a single Claude streaming call |
+| **OrchestratorNode** | Purple | Multi-turn agentic loop that delegates to connected agents/services via tool use |
+| **ServiceNode** | Orange | Executes external HTTP calls (webhooks, Slack, GitHub, Email, Google Sheets) |
 
-React components that render the UI. The `FlowCanvas` wraps React Flow and renders `AgentNode` instances. The `Toolbar` provides action buttons. The `NodeEditorPanel` opens as a sidebar when a node is selected.
+### Three Layers
 
-### 2. State Layer (useFlow hook)
-
-All flow state (nodes and edges) is managed by the `useFlow` hook. Every state change is automatically persisted to `localStorage`. The hook exposes React Flow-compatible callbacks (`onNodesChange`, `onEdgesChange`, `onConnect`) and custom actions (`addNode`, `updateNodeData`, `clearFlow`).
-
-### 3. Runtime Layer (useRunner hook + utilities)
-
-When the user clicks "Run", the `useRunner` hook:
-1. Resolves execution order via `topologicalSort` (Kahn's algorithm)
-2. Iterates through nodes sequentially
-3. Calls `streamClaudeResponse` for each node
-4. Pipes each node's output as the next node's input
+1. **Presentation Layer** — React components render the UI. FlowCanvas wraps React Flow. Three node types (Agent, Orchestrator, Service) display status and output. NodeEditorPanel adapts its fields to the selected node type.
+2. **State Layer** — `useFlow` manages all node/edge state with automatic localStorage persistence. Serialization whitelists known data fields to prevent React Flow internals from leaking into storage.
+3. **Runtime Layer** — `useRunner` topologically sorts nodes, resolves template variables, then executes each node based on its type. Orchestrator nodes are handled by a multi-turn agentic loop; their subagent nodes are skipped in the main loop.
 
 ---
 
@@ -91,48 +111,67 @@ User action (drag/connect/edit)
   useFlow setState (setNodes/setEdges)
         │
         ▼
-  useEffect → localStorage.setItem('vab_flow', ...)
+  useEffect → cleanData() → localStorage.setItem('vab_flow', ...)
+  (whitelisted fields only: no React internals persist)
 ```
 
 ### Execution Flow
 
 ```
-User clicks "Run"
+User clicks "▶ Run" (Toolbar) or submits via InputBar
         │
         ▼
-  App.handleRun(apiKey)
+  App.handleRun(initialInput)
         │
         ▼
-  useRunner.run(apiKey)
+  useRunner.run(apiKey, initialInput)
+        │
+        ├─ topologicalSort(nodes, edges)
+        ├─ getOrchestratorSubagentIds(nodes, edges) → skip set
         │
         ▼
-  topologicalSort(nodes, edges)
+  For each node in sorted order (skip subagent nodes):
+  ┌──────────────────────────────────────────────────────┐
+  │  resolveTemplate(systemPrompt, nodes)                │
+  │  resolveTemplate(serviceConfig.url, nodes)           │
+  │                                                      │
+  │  if orchestratorNode:                                │
+  │    executeOrchestrator({node, subagents, tools})     │
+  │    ├─ Claude tool_use loop (up to maxRounds)         │
+  │    ├─ Parallel subagent execution (Promise.all)      │
+  │    ├─ Edge glow activation during calls              │
+  │    └─ buildReport(finalText, callLog)                │
+  │                                                      │
+  │  if serviceNode:                                     │
+  │    executeService(serviceType, config, prevOutput)   │
+  │                                                      │
+  │  if agentNode:                                       │
+  │    streamClaudeResponse(prompt, prevOutput, onChunk) │
+  │                                                      │
+  │  updateNodeData(id, {status:'done', output})         │
+  │  prevOutput = output                                 │
+  └──────────────────────────────────────────────────────┘
         │
         ▼
-  For each node in sorted order:
-  ┌─────────────────────────────────────────┐
-  │  if (isRunning.current) return          │
-  │  isRunning.current = true               │
-  │              │                          │
-  │  updateNodeData(id, {status: 'running'})│
-  │              │                          │
-  │              ▼                          │
-  │  output = await streamClaudeResponse({  │
-  │    systemPrompt: node.data.systemPrompt,│
-  │    userMessage: prevOutput,             │
-  │    temperature: node.data.temperature,  │
-  │    onChunk: text => updateNodeData(...) │
-  │  })                                     │
-  │  updateNodeData(id, {status:'done'})    │
-  │  prevOutput = output                    │
-  │              │                          │
-  │              ▼                          │
-  │  On error: status='error', throw        │
-  │  finally: isRunning.current = false     │
-  └─────────────────────────────────────────┘
+  finally: isRunning.current = false, resetEdgeStyles()
 ```
 
-The first node receives an empty string as `userMessage` (the Claude utility substitutes `"Begin."` when the message is empty). Each subsequent node receives the full output of the previous node.
+### Template Variable Resolution
+
+Before execution, template variables in `systemPrompt` and `serviceConfig` are resolved:
+
+```
+"Summarize: {{Researcher.output}}"
+         │
+         ▼
+resolveTemplate(template, nodes)
+         │
+         ├─ extractVariables() → [{nodeName: "Researcher", path: ""}]
+         ├─ find node by name (case-insensitive)
+         ├─ get node.data.output
+         ├─ if path: JSON.parse(output) → resolvePath(parsed, path)
+         └─ replace {{...}} with resolved value
+```
 
 ---
 
@@ -156,11 +195,11 @@ topologicalSort(nodes, edges) → sortedNodes[]
 
 #### Algorithm
 
-1. **Validation** — Builds a `Set` of valid node IDs. Checks every edge's `source` and `target` exist in the set. Throws `"Edge references unknown source/target node: {id}"` if not.
+1. **Validation** — Builds a `Set` of valid node IDs. Checks every edge's `source` and `target` exist in the set. Throws if not.
 2. **Build graph** — Creates an in-degree map and adjacency list from edges.
 3. **Initialize queue** — All nodes with in-degree 0 (no incoming edges) enter the queue.
 4. **Process** — Dequeue a node, add to result, decrement in-degree of its neighbors. Enqueue neighbors that reach in-degree 0.
-5. **Cycle detection** — If `result.length !== nodes.length`, a cycle exists. Throws `"Cycle detected in flow"`.
+5. **Cycle detection** — If `result.length !== nodes.length`, a cycle exists.
 6. **Map back** — Converts result IDs back to original node objects via `nodes.find()`.
 
 #### Error Cases
@@ -197,29 +236,16 @@ streamClaudeResponse(opts) → Promise<string>
 
 - **Model**: `claude-sonnet-4-6`
 - **Max tokens**: 1024
-- **Browser-safe**: Uses `dangerouslyAllowBrowser: true` to allow client-side API calls
+- **Browser-safe**: Uses `dangerouslyAllowBrowser: true` for client-side API calls
 - **Empty message handling**: If `userMessage` is empty/falsy, sends `"Begin."` as the user message
-- **Streaming protocol**: Listens for `content_block_delta` events with `text_delta` type
+- **Optional callbacks**: Both `onChunk` and `onDone` use optional chaining (`onChunk?.(fullText)`), safe to omit
 - **Accumulation**: `onChunk` receives the full accumulated text so far (not just the delta), enabling progressive UI rendering
-- **Optional callbacks**: Both `onChunk` and `onDone` use optional chaining (`onChunk?.(fullText)`), making them safe to omit
-
-#### Stream Event Processing
-
-```js
-for await (const event of stream) {
-  if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-    fullText += event.delta.text
-    onChunk?.(fullText)  // accumulated, not delta; optional
-  }
-}
-onDone?.(fullText)
-```
 
 ---
 
 ### Orchestrator (`src/utils/orchestrator.js`)
 
-Implements the multi-turn agentic loop that allows an OrchestratorNode to autonomously delegate work to connected AgentNodes via Claude's tool use API.
+Implements the multi-turn agentic loop that allows an OrchestratorNode to autonomously delegate work to connected AgentNodes and ServiceNodes via Claude's tool use API.
 
 #### Exported Functions
 
@@ -229,18 +255,18 @@ Converts a node name into a valid Anthropic tool name: lowercase, spaces to unde
 
 ##### `getOrchestratorSubagentIds(nodes, edges) → Set<string>`
 
-Returns the IDs of all AgentNodes that are targets of outgoing edges from any orchestrator node. These nodes are skipped in the main runner loop because the orchestrator handles their execution internally.
+Returns the IDs of all nodes that are targets of outgoing edges from any orchestrator node. Only considers `agentNode` and `serviceNode` types (defined in `TOOL_NODE_TYPES`). These nodes are skipped in the main runner loop.
 
 ##### `getSubagentNodes(orchestratorId, nodes, edges) → Node[]`
 
-Returns the AgentNode objects connected via outgoing edges from a specific orchestrator. Only returns nodes with `type === 'agentNode'` (flat architecture — no nested orchestrators).
+Returns the tool-capable node objects connected via outgoing edges from a specific orchestrator.
 
-##### `buildTools(subagentNodes) → Array<{nodeId, name, tool}>`
+##### `buildTools(subNodes) → Array<{nodeId, nodeType, name, tool}>`
 
-Converts an array of AgentNodes into Anthropic tool definitions:
-- `name`: sanitized node name (deduplicates by appending node ID suffix on collision)
-- `description`: the node's system prompt (falls back to `"Agent: {name}"` if empty)
-- `input_schema`: `{ task: string }` — the task to delegate
+Converts an array of sub-nodes into Anthropic tool definitions:
+- **Name**: sanitized node name (deduplicates by appending node ID suffix on collision)
+- **Description**: for agents, the system prompt (falls back to `"Agent: {name}"`); for services, generated by `getServiceToolDescription()`
+- **Input schema**: `{ task: string }` — the task to delegate
 
 ##### `executeOrchestrator(opts) → Promise<string>`
 
@@ -250,10 +276,11 @@ Runs the multi-turn agentic loop.
 |---|---|---|
 | `opts.apiKey` | `string` | Anthropic API key |
 | `opts.node` | `Node` | The orchestrator node |
-| `opts.subagentNodes` | `Node[]` | Connected AgentNodes (become tools) |
+| `opts.subagentNodes` | `Node[]` | Connected tool nodes (agents + services) |
 | `opts.userMessage` | `string` | Input from previous node in chain |
-| `opts.onUpdate` | `(data) => void` | Updates orchestrator node data (output, currentRound) |
+| `opts.onUpdate` | `(data) => void` | Updates orchestrator node data (output, status, currentRound, thinking) |
 | `opts.onSubagentUpdate` | `(nodeId, data) => void` | Updates subagent node data (status, output) |
+| `opts.onEdgeActivate` | `(sourceId, targetIds[], active) => void` | Activates/deactivates edge glow animation |
 
 **Loop Behavior:**
 
@@ -261,25 +288,122 @@ Runs the multi-turn agentic loop.
 round = 0, messages = [{ user: prevOutput || "Begin." }]
 
 while round < maxRounds:
+  status = 'thinking'
   response = claude.messages.create({ system, messages, tools })
 
-  if stop_reason === "end_turn" (no tool calls):
-    return text → done
+  if no tool_use blocks or stop_reason === "end_turn":
+    return buildReport(text, callLog) → done
 
-  if tool_use blocks present:
-    execute all tool calls in parallel (Promise.all)
-    each tool call runs streamClaudeResponse on the matching AgentNode
-    append assistant + tool_result messages to conversation
-    round++
+  status = 'calling_subagent'
+  activate edge glow for called nodes
+
+  execute all tool calls in parallel (Promise.all):
+    serviceNode → executeService(serviceType, config, task)
+    agentNode   → streamClaudeResponse(prompt, task, temp)
+
+  deactivate edge glow
+  append assistant + tool_result messages
+  round++
 
 if maxRounds exceeded:
-  return last text or "Max rounds reached"
+  return buildReport(lastText, callLog) → done
 ```
 
-- **Model**: `claude-sonnet-4-6` with `max_tokens: 4096` (higher than regular agents to accommodate tool reasoning)
+- **Model**: `claude-sonnet-4-6` with `max_tokens: 4096` (higher than regular agents)
 - **Parallel execution**: Multiple tool calls in a single response are executed concurrently via `Promise.all`
-- **Subagent visibility**: Subagent nodes update their status and output in real-time during execution
-- **Error resilience**: If a subagent fails, the error is returned as a `tool_result` with `is_error: true`, letting the orchestrator decide how to proceed
+- **Edge animation**: Edges glow purple during active subagent calls
+- **Thinking bubble**: Orchestrator's reasoning text appears as a speech bubble on the node
+- **Error resilience**: If a subagent fails, the error is returned as `tool_result` with `is_error: true`
+- **Report generation**: `buildReport()` appends a summary of all agent calls to the final output
+
+---
+
+### Template Engine (`src/utils/template.js`)
+
+Parses and resolves `{{NodeName.output}}` template variables across node configurations.
+
+#### Syntax
+
+```
+{{NodeName.output}}              → full output of node named "NodeName"
+{{NodeName.output.user.name}}    → JSON path into output (parsed as JSON)
+{{NodeName.output.items[0]}}     → array index support
+```
+
+#### Exported Functions
+
+| Function | Signature | Description |
+|---|---|---|
+| `extractVariables` | `(template) → [{raw, nodeName, path}]` | Parse all `{{...}}` variables from a string |
+| `resolvePath` | `(obj, path) → value` | Traverse an object by dot-notation path with array index support |
+| `resolveTemplate` | `(template, nodes) → string` | Replace all variables with actual node output values |
+| `validateVariables` | `(variables, nodes) → [{..., valid, reason?}]` | Check if referenced nodes exist |
+| `extractNodeVariables` | `(node) → [{raw, nodeName, path}]` | Extract variables from all config fields of a node |
+
+#### Resolution Rules
+
+- Node name matching is **case-insensitive**
+- If a node is not found, the token is left as-is (no error)
+- If output is `null`/`undefined`, the token is left as-is
+- If a sub-path is requested but output is not valid JSON, the token is left as-is
+- Objects/arrays are stringified with `JSON.stringify()`; primitives use `String()`
+- `extractNodeVariables` scans: `data.systemPrompt` (agent/orchestrator), `data.serviceConfig.url` and `data.serviceConfig.headers` (service nodes)
+
+---
+
+### Service Registry (`src/utils/service-registry.js`)
+
+Pluggable registry of external service types. Each service defines its config fields, UI metadata, and async executor.
+
+#### `SERVICE_TYPES` Map
+
+| Key | Label | Icon | Description |
+|---|---|---|---|
+| `webhook` | Webhook (HTTP) | W | Generic HTTP request to any URL |
+| `slack` | Slack | `\ud83d\udcac` | Send a message via incoming webhook |
+| `github` | GitHub Issue | G | Create an issue on a GitHub repo |
+| `email` | Email (Resend) | `\u2709` | Send email via Resend API |
+| `gsheets` | Google Sheets | `\ud83d\udcca` | Append a row to a Google Sheet |
+
+#### Service Configuration
+
+Each service type defines:
+- `configFields[]` — Array of `{key, label, type, placeholder, options?}` for the editor panel
+- `defaultConfig` — Default values for new service nodes
+- `execute(config, input) → Promise<string>` — Async executor
+
+#### Token Storage
+
+Services read credentials from localStorage:
+
+| Service | localStorage Key | Format |
+|---|---|---|
+| Slack | `vab_slack_webhook` | Webhook URL |
+| GitHub | `vab_github_token` | Personal access token (`ghp_...`) |
+| Email | `vab_resend_key` | Resend API key (`re_...`) |
+| Google Sheets | `vab_gsheets_key` | Google API key (`AIza...`) |
+
+#### Exported Functions
+
+| Function | Description |
+|---|---|
+| `executeService(serviceType, config, input)` | Look up service by type and call its executor |
+| `getServiceToolDescription(node)` | Generate a human-readable tool description for the orchestrator |
+
+---
+
+### PDF Reader (`src/utils/pdf-reader.js`)
+
+Extracts text from PDF files for use as input in the InputBar.
+
+```js
+extractPdfText(file: File) → Promise<string>
+```
+
+- **Lazy loading**: Imports `pdfjs-dist` only when called (keeps initial bundle small)
+- **Worker**: Configures the PDF.js web worker via `import.meta.url`
+- **Output format**: Pages separated by `--- Page N ---` headers
+- **Usage**: Called from InputBar when user uploads a `.pdf` file
 
 ---
 
@@ -293,75 +417,109 @@ Central state management hook for the flow editor. Manages all node and edge sta
 
 ```js
 {
-  nodes,            // Node[] — current node array
-  edges,            // Edge[] — current edge array
-  onNodesChange,    // (changes) => void — React Flow node change handler
-  onEdgesChange,    // (changes) => void — React Flow edge change handler
-  onConnect,        // (connection) => void — React Flow new connection handler
-  addNode,          // () => void — adds a new AgentNode to the canvas
-  updateNodeData,   // (id, data) => void — merges data into a node
-  clearFlow         // () => void — removes all nodes and edges
+  nodes,               // Node[] — current node array
+  edges,               // Edge[] — current edge array
+  onNodesChange,       // (changes) => void — React Flow node change handler
+  onEdgesChange,       // (changes) => void — React Flow edge change handler
+  onConnect,           // (connection) => void — React Flow new connection handler
+  addNode,             // () => void — adds a new AgentNode
+  addOrchestratorNode, // () => void — adds a new OrchestratorNode
+  addServiceNode,      // (serviceType?) => void — adds a new ServiceNode (default: 'webhook')
+  updateNodeData,      // (id, data) => void — merges data into a node
+  activateEdges,       // (sourceId, targetIds[], active) => void — toggles edge glow
+  resetEdgeStyles,     // () => void — resets all edge styles
+  clearFlow            // () => void — removes all nodes and edges
 }
 ```
 
 #### localStorage Persistence
 
 - **Key**: `vab_flow`
-- **Load**: On hook initialization, uses **lazy state initializers** (`() => loadFlow().nodes`) so localStorage is only read during the first render, not on every re-render. Falls back to `{ nodes: [], edges: [] }` on missing/corrupt data.
-- **Save**: A `useEffect` watching `[nodes, edges]` serializes the full state to localStorage on every change.
+- **Valid types**: `Set(['agentNode', 'orchestratorNode', 'serviceNode'])` — unknown types are filtered on load
+- **Load**: Lazy state initializer (`() => loadFlow().nodes`). Filters invalid node types and orphaned edges. Falls back to `{ nodes: [], edges: [] }` on error.
+- **Save**: `useEffect` serializes on every change with a **whitelist approach** — `cleanData()` extracts only known fields (`name`, `systemPrompt`, `temperature`, `maxRounds`, `serviceType`, `serviceConfig`, `output`, `status`, `currentRound`, `thinking`) to prevent React Flow internals or injected props from leaking into storage.
+- **Edge serialization**: Only persists `id`, `source`, `target` — strips `animated`, `style`, and other runtime properties.
 
-#### Node Schema (as created by `addNode`)
+#### Node Schemas
 
+**AgentNode** (created by `addNode`):
 ```js
 {
-  id: 'node-{timestamp}',       // unique ID based on Date.now()
-  type: 'agentNode',            // maps to AgentNode component in React Flow
-  position: { x, y },           // x = 100 + (nodeCount * 240), y = 150
+  id: 'node-{timestamp}',
+  type: 'agentNode',
+  position: { x: 100 + nodeCount * 240, y: 150 },
   data: {
-    name: 'New Agent',           // display name
-    systemPrompt: '',            // Claude system prompt
-    temperature: 0.7,            // 0.0 – 1.0
-    output: '',                  // Claude's response (filled during execution)
-    status: 'idle'               // 'idle' | 'running' | 'done' | 'error'
+    name: 'New Agent',
+    systemPrompt: '',
+    temperature: 0.7,
+    output: '',
+    status: 'idle'    // 'idle' | 'running' | 'done' | 'error'
   }
 }
 ```
 
-#### React Flow Integration
+**OrchestratorNode** (created by `addOrchestratorNode`):
+```js
+{
+  id: 'node-{timestamp}',
+  type: 'orchestratorNode',
+  position: { x: 100 + nodeCount * 240, y: 150 },
+  data: {
+    name: 'Orchestrator',
+    systemPrompt: '',
+    temperature: 0.7,
+    maxRounds: 5,         // 1–20, configurable
+    output: '',
+    status: 'idle',       // 'idle' | 'thinking' | 'calling_subagent' | 'running' | 'done' | 'error'
+    currentRound: 0
+  }
+}
+```
 
-The hook uses three utilities from `@xyflow/react`:
+**ServiceNode** (created by `addServiceNode`):
+```js
+{
+  id: 'node-{timestamp}',
+  type: 'serviceNode',
+  position: { x: 100 + nodeCount * 240, y: 150 },
+  data: {
+    name: 'Webhook',
+    serviceType: 'webhook',  // or 'slack', 'github', 'email', 'gsheets'
+    serviceConfig: {         // varies per service type
+      url: '',
+      method: 'POST',
+      headers: '{"Content-Type": "application/json"}'
+    },
+    output: '',
+    status: 'idle'    // 'idle' | 'running' | 'done' | 'error'
+  }
+}
+```
 
-| Function | Purpose |
-|---|---|
-| `applyNodeChanges(changes, nodes)` | Applies position/selection/removal changes to nodes |
-| `applyEdgeChanges(changes, edges)` | Applies selection/removal changes to edges |
-| `addEdge(connection, edges)` | Creates a new edge from a connection event |
+#### Edge Animation
 
-All callbacks are wrapped in `useCallback` with stable dependency arrays to prevent unnecessary re-renders.
+`activateEdges(sourceId, targetIds, active)` toggles animated purple glow on edges between an orchestrator and its active subagents:
+- `active = true`: Sets `animated: true`, `style: { stroke: '#a855f7', strokeWidth: 2.5 }`
+- `active = false`: Resets stroke styles
+- `resetEdgeStyles()`: Clears all edge animations (called in `useRunner.finally`)
 
 ---
 
 ### useRunner (`src/hooks/useRunner.js`)
 
-Orchestrates sequential execution of the agent chain through the Claude API.
+Orchestrates execution of the entire node graph through the Claude API and external services.
 
 #### Parameters
 
 ```js
-useRunner({ nodes, edges, updateNodeData })
+useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles })
 ```
-
-| Parameter | Type | Description |
-|---|---|---|
-| `nodes` | `Node[]` | Current nodes from useFlow |
-| `edges` | `Edge[]` | Current edges from useFlow |
-| `updateNodeData` | `(id, data) => void` | Callback to update node state (from useFlow) |
 
 #### Returns
 
 ```js
 {
-  run,        // (apiKey: string) => Promise<void>
+  run,        // (apiKey: string, initialInput?: string) => Promise<void>
   isRunning   // React ref — isRunning.current is true during execution
 }
 ```
@@ -371,27 +529,20 @@ useRunner({ nodes, edges, updateNodeData })
 1. **Guard**: If `isRunning.current` is `true`, return immediately (prevents double execution)
 2. **Lock**: Set `isRunning.current = true`
 3. **Sort**: `topologicalSort(nodes, edges)` determines execution order
-4. **Identify subagents**: `getOrchestratorSubagentIds(nodes, edges)` returns IDs of nodes managed by orchestrators — these are skipped in the main loop
-5. **Initialize**: `prevOutput = ''` (first node gets empty input)
+4. **Identify subagents**: `getOrchestratorSubagentIds(nodes, edges)` returns IDs of nodes managed by orchestrators — skipped in main loop
+5. **Initialize**: `prevOutput = initialInput` (from InputBar or empty string)
 6. **For each node** (sequentially, skipping subagent nodes):
-   - If `orchestratorNode`: call `executeOrchestrator()` with connected subagents as tools
-   - If `agentNode`: call `streamClaudeResponse()` with node's config and `prevOutput`
-   - `onChunk`: progressively update node's output (streaming UI)
+   - **Resolve templates**: `resolveTemplate()` on `systemPrompt` and `serviceConfig` fields
+   - **orchestratorNode**: `executeOrchestrator()` with connected subagents as tools, edge glow activation
+   - **serviceNode**: `executeService()` with resolved config and `prevOutput`
+   - **agentNode**: `streamClaudeResponse()` with resolved prompt and `prevOutput`
    - On success: set status to `'done'`, assign `prevOutput = output`
 7. **On error**: set status to `'error'`, store error message, re-throw to halt chain
-8. **Finally**: Set `isRunning.current = false` (always, even on error)
-
-#### Error Behavior
-
-Execution is **fail-fast**: the first node that encounters an API error turns red, and no subsequent nodes are executed. The error is re-thrown so the caller (App.jsx) can handle it. The `try/finally` block ensures `isRunning` is always reset.
-
-#### Concurrency Protection
-
-The `isRunning` ref (`useRef(false)`) acts as a mutex — clicking "Run" multiple times while execution is in progress is a no-op. The ref is also exposed to `App.jsx` which uses `!isRunning.current` in the `canRun` prop to disable the Run button during execution.
+8. **Finally**: `isRunning.current = false`, `resetEdgeStyles()`
 
 #### Dependency Array
 
-The `run` callback depends on `[nodes, edges, updateNodeData]`, ensuring it always references current state when invoked.
+`[nodes, edges, updateNodeData, activateEdges, resetEdgeStyles]`
 
 ---
 
@@ -407,84 +558,43 @@ Root component that composes all UI elements and manages application-level state
 |---|---|---|
 | `apiKey` | `string` | Anthropic API key, loaded from localStorage on mount |
 | `showSettings` | `boolean` | Controls SettingsModal visibility; true if no key stored |
-| `selectedNode` | `Node \| null` | Currently selected node for the editor panel |
+| `selectedNodeId` | `string \| null` | ID of currently selected node |
+
+Note: `selectedNode` is derived via `useMemo` from `nodes` + `selectedNodeId`, ensuring it always reflects current node state.
 
 #### Wiring
 
-- Instantiates `useFlow()` for flow state
-- Instantiates `useRunner({ nodes, edges, updateNodeData })` for execution
-- Passes flow callbacks to `FlowCanvas`
-- Passes `selectedNode` and `updateNodeData` to `NodeEditorPanel`
-- Controls "Run" button enable state: `!!apiKey && nodes.length > 0 && !isRunning.current`
+- Instantiates `useFlow()` for flow state (nodes, edges, all node actions)
+- Instantiates `useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles })`
+- Toolbar receives `addNode`, `addOrchestratorNode`, `addServiceNode`, `handleRun`, `handleClear`, `canRun`
+- `canRun = !!apiKey && nodes.length > 0 && !isRunning.current`
+- InputBar at the bottom provides text input + PDF upload, calls `handleRun(initialInput)`
 
 #### Layout
 
 ```
-┌──────────────────────────────────────────────┐
-│                  Toolbar                      │
-├────────────────────────────────┬──────────────┤
-│                                │              │
-│          FlowCanvas            │  NodeEditor  │
-│     (React Flow canvas)        │   Panel      │
-│                                │  (sidebar)   │
-│                                │              │
-└────────────────────────────────┴──────────────┘
+┌───────────────────────────────────────────────────────┐
+│                      Toolbar                          │
+│  [+Node] [+Orchestrator] [+Service] [▶Run] [Clear]   │
+├──────────────────────────────────┬────────────────────┤
+│                                  │                    │
+│          FlowCanvas              │  NodeEditorPanel   │
+│     (React Flow canvas)         │  (sidebar)         │
+│  AgentNode, OrchestratorNode,    │                    │
+│  ServiceNode                     │                    │
+│                                  │                    │
+├──────────────────────────────────┴────────────────────┤
+│  InputBar — [textarea] [PDF] [▶ Run]                  │
+└───────────────────────────────────────────────────────┘
          SettingsModal (overlay, conditional)
-```
-
----
-
-### OrchestratorNode (`src/components/OrchestratorNode.jsx`)
-
-Custom React Flow node representing an orchestrator that delegates tasks to connected AgentNodes via tool use.
-
-#### Props
-
-| Prop | Type | Description |
-|---|---|---|
-| `data` | `object` | Node data: `name`, `systemPrompt`, `temperature`, `maxRounds`, `output`, `status`, `currentRound` |
-| `selected` | `boolean` | Whether the node is currently selected |
-
-#### Status Styles
-
-| Status | Border | Background |
-|---|---|---|
-| `idle` | `border-purple-300` | `bg-purple-50` |
-| `running` | `border-yellow-400` | `bg-yellow-50` |
-| `done` | `border-green-400` | `bg-green-50` |
-| `error` | `border-red-400` | `bg-red-50` |
-
-#### Visual Elements
-
-- **Purple diamond icon** (&#9670;) before the name to distinguish from regular agents
-- **Round counter**: Shows "Running (round 2/5)" during execution
-- **Selection ring**: Purple ring (`ring-2 ring-purple-500`) when selected
-- Same handles as AgentNode (target left, source right)
-
-#### Data Shape
-
-```js
-{
-  id: 'node-{timestamp}',
-  type: 'orchestratorNode',
-  position: { x, y },
-  data: {
-    name: 'Orchestrator',
-    systemPrompt: '',
-    temperature: 0.7,
-    maxRounds: 5,          // configurable 1-20
-    output: '',
-    status: 'idle',
-    currentRound: 0        // updated during execution
-  }
-}
+         ErrorBoundary (wraps entire app in main.jsx)
 ```
 
 ---
 
 ### AgentNode (`src/components/AgentNode.jsx`)
 
-Custom React Flow node component representing a single AI agent in the workflow.
+Custom React Flow node representing a single AI agent.
 
 #### Props
 
@@ -495,35 +605,94 @@ Custom React Flow node component representing a single AI agent in the workflow.
 
 #### Status Styles
 
-| Status | Border | Background |
-|---|---|---|
-| `idle` | `border-gray-300` | `bg-white` |
-| `running` | `border-yellow-400` | `bg-yellow-50` |
-| `done` | `border-green-400` | `bg-green-50` |
-| `error` | `border-red-400` | `bg-red-50` |
+| Status | Border | Background | Badge |
+|---|---|---|---|
+| `idle` | `border-gray-300` | `bg-white` | "Idle" (gray) |
+| `running` | `border-yellow-400` | `bg-yellow-50` | "Working" (yellow) |
+| `done` | `border-green-400` | `bg-green-50` | "Done" (green) |
+| `error` | `border-red-400` | `bg-red-50` | "Error" (red) |
 
 #### Visual Elements
 
+- **Robot icon** (`\ud83e\udd16`) in blue before the name
+- **Status badge**: Colored pill in top-right corner
 - **Selection ring**: Blue ring (`ring-2 ring-blue-500`) when selected
-- **Name label**: Truncated, semibold text
-- **Running indicator**: Animated pulse text "Running..."
-- **Error display**: Red error message (word-wrapped)
-- **Output preview**: Scrollable output area (max height 24, `whitespace-pre-wrap`), shown when status is `done`
+- **Running indicator**: "Processing..." with `animate-pulse`
+- **Output preview**: Shown during both `running` and `done` states (max-h-32, scrollable)
+- **VariableBadges**: Shows `{{...}}` variable references at the bottom with clickable navigation
+- **Handles**: target (left), source (right)
 
-#### Handles
+---
 
-| Handle | Type | Position |
+### OrchestratorNode (`src/components/OrchestratorNode.jsx`)
+
+Custom React Flow node representing an orchestrator that delegates tasks to connected nodes via tool use.
+
+#### Props
+
+| Prop | Type | Description |
 |---|---|---|
-| Input | `target` | Left side |
-| Output | `source` | Right side |
+| `data` | `object` | `name`, `systemPrompt`, `temperature`, `maxRounds`, `output`, `status`, `currentRound`, `thinking` |
+| `selected` | `boolean` | Whether the node is currently selected |
 
-Edges connect from the **source handle** (right) of one node to the **target handle** (left) of the next, creating left-to-right data flow.
+#### Status Styles
+
+| Status | Border | Background | Badge |
+|---|---|---|---|
+| `idle` | `border-purple-300` | `bg-purple-50` | "Idle" |
+| `thinking` | `border-purple-400` | `bg-purple-50` | "Thinking" (purple) |
+| `calling_subagent` | `border-yellow-400` | `bg-yellow-50` | "Calling agents" (yellow) |
+| `running` | `border-yellow-400` | `bg-yellow-50` | "Running" (yellow) |
+| `done` | `border-green-400` | `bg-green-50` | "Done" (green) |
+| `error` | `border-red-400` | `bg-red-50` | "Error" (red) |
+
+#### Visual Elements
+
+- **Brain icon** (`\ud83e\udde0`) in purple before the name
+- **Round counter**: Shows "Round 2/5" during active execution
+- **Thinking bubble**: Shows orchestrator's reasoning text (with `\ud83d\udcad` icon)
+- **Selection ring**: Purple ring when selected
+- **Width**: 64 (wider than AgentNode's 56) to accommodate round counter and thinking bubble
+- **VariableBadges**: Same as AgentNode
+
+---
+
+### ServiceNode (`src/components/ServiceNode.jsx`)
+
+Custom React Flow node representing an external service call.
+
+#### Props
+
+| Prop | Type | Description |
+|---|---|---|
+| `data` | `object` | `name`, `serviceType`, `serviceConfig`, `output`, `status` |
+| `selected` | `boolean` | Whether the node is currently selected |
+
+#### Status Styles
+
+| Status | Border | Background | Badge |
+|---|---|---|---|
+| `idle` | `border-orange-300` | `bg-orange-50` | "Idle" |
+| `running` | `border-yellow-400` | `bg-yellow-50` | "Calling" (yellow) |
+| `done` | `border-green-400` | `bg-green-50` | "Done" (green) |
+| `error` | `border-red-400` | `bg-red-50` | "Error" (red) |
+
+#### Visual Elements
+
+- **Service icon**: Dynamic from `SERVICE_TYPES[serviceType].icon` (e.g., W, `\ud83d\udcac`, G, `\u2709`, `\ud83d\udcca`)
+- **Service type label**: Shows type + method (e.g., "Webhook (HTTP) (POST)")
+- **Selection ring**: Orange ring when selected
+- **VariableBadges**: Shows variable references in URL and headers
 
 ---
 
 ### FlowCanvas (`src/components/FlowCanvas.jsx`)
 
-Wrapper around React Flow that renders the node graph with controls.
+Wrapper around React Flow that renders the interactive node graph.
+
+#### Architecture
+
+Uses `ReactFlowProvider` + inner `FlowCanvasInner` pattern to access `useReactFlow()` for canvas navigation.
 
 #### Props
 
@@ -531,26 +700,34 @@ Wrapper around React Flow that renders the node graph with controls.
 |---|---|---|
 | `nodes` | `Node[]` | Nodes from useFlow |
 | `edges` | `Edge[]` | Edges from useFlow |
-| `onNodesChange` | `function` | Node change handler from useFlow |
-| `onEdgesChange` | `function` | Edge change handler from useFlow |
-| `onConnect` | `function` | Connection handler from useFlow |
+| `onNodesChange` | `function` | Node change handler |
+| `onEdgesChange` | `function` | Edge change handler |
+| `onConnect` | `function` | Connection handler |
 | `onNodeClick` | `(node) => void` | Callback when a node is clicked |
+
+#### Node Types Registry
+
+```js
+{ agentNode: AgentNode, orchestratorNode: OrchestratorNode, serviceNode: ServiceNode }
+```
+
+#### Node Enrichment
+
+All nodes are enriched via `useMemo` with:
+- `data._allNodes` — reference to all nodes (for VariableBadges validation)
+- `data._onNavigateToNode` — callback that uses `setCenter()` to pan/zoom to a target node
 
 #### Configuration
 
-- **Node types**: Registers `{ agentNode: AgentNode, orchestratorNode: OrchestratorNode }` as custom node types
+- **Delete key**: `['Delete', 'Backspace']` — both keys remove selected elements
 - **Fit view**: Automatically fits all nodes in view on load
-- **Delete key**: `"Delete"` key removes selected nodes/edges
-- **Sub-components**:
-  - `Background` — dot grid background
-  - `Controls` — zoom in/out/fit controls
-  - `MiniMap` — overview minimap with indigo node color (`#6366f1`)
+- **MiniMap colors**: Indigo (`#6366f1`) for agents, Purple (`#9333ea`) for orchestrators, Orange (`#ea580c`) for services
 
 ---
 
 ### NodeEditorPanel (`src/components/NodeEditorPanel.jsx`)
 
-Sidebar panel for configuring the selected node's properties.
+Sidebar panel that adapts to the selected node type.
 
 #### Props
 
@@ -560,28 +737,33 @@ Sidebar panel for configuring the selected node's properties.
 | `onChange` | `(id, data) => void` | Callback to update node data |
 | `onClose` | `() => void` | Callback to close the panel |
 
-#### Fields
+#### Adaptive Fields
 
-| Field | Input Type | Data Property | Shown for |
-|---|---|---|---|
-| Name | Text input | `data.name` | All nodes |
-| System Prompt | Textarea (height 40) | `data.systemPrompt` | All nodes |
-| Temperature | Range slider (0.0–1.0, step 0.1) | `data.temperature` | All nodes |
-| Max Rounds | Range slider (1–20, step 1) | `data.maxRounds` | Orchestrator only |
+| Field | Input Type | Shown For |
+|---|---|---|
+| Name | Text input | All nodes |
+| System Prompt | Textarea (h-40) | Agent + Orchestrator |
+| Temperature | Range 0.0–1.0, step 0.1 | Agent + Orchestrator |
+| Max Rounds | Range 1–20, step 1 | Orchestrator only |
+| Service Type | Select dropdown | Service only |
+| Dynamic config fields | Per service registry | Service only |
+| Output | Read-only monospace display | All (when output exists) |
 
-The temperature slider shows labels "Precise" (0.0) and "Creative" (1.0) at the extremes. The Max Rounds slider only appears when an `orchestratorNode` is selected.
+Service config fields are dynamically rendered from `SERVICE_TYPES[serviceType].configFields` — supports `text`, `textarea`, and `select` input types.
 
 ---
 
 ### Toolbar (`src/components/Toolbar.jsx`)
 
-Top bar with action buttons and application title.
+Top bar with action buttons.
 
 #### Props
 
 | Prop | Type | Description |
 |---|---|---|
-| `onAddNode` | `() => void` | Adds a new node to the canvas |
+| `onAddNode` | `() => void` | Adds a new AgentNode |
+| `onAddOrchestrator` | `() => void` | Adds a new OrchestratorNode |
+| `onAddService` | `() => void` | Adds a new ServiceNode |
 | `onRun` | `() => void` | Starts workflow execution |
 | `onClear` | `() => void` | Removes all nodes and edges |
 | `onSettings` | `() => void` | Opens the settings modal |
@@ -591,35 +773,100 @@ Top bar with action buttons and application title.
 
 | Button | Color | Action |
 |---|---|---|
-| "+ Add Node" | Blue | Adds new agent node |
-| "+ Orchestrator" | Purple | Adds new orchestrator node |
-| "Run" | Green (disabled when `!canRun`) | Executes the flow |
+| "+ Add Node" | Blue | Adds new AgentNode |
+| "+ Orchestrator" | Purple | Adds new OrchestratorNode |
+| "+ Service" | Orange | Adds new ServiceNode |
+| "▶ Run" | Green (disabled when `!canRun`) | Executes the flow |
 | "Clear" | Gray | Clears the canvas |
-| "Settings" | Gray (right-aligned) | Opens API key modal |
+| "Settings" | Gray (right-aligned) | Opens settings modal |
 
 ---
 
-### SettingsModal (`src/components/SettingsModal.jsx`)
+### InputBar (`src/components/InputBar.jsx`)
 
-Modal overlay for entering the Anthropic API key.
+Bottom bar with text input, file upload, and run button. Provides an alternative way to start execution with custom initial input.
 
 #### Props
 
 | Prop | Type | Description |
 |---|---|---|
-| `onSave` | `(key: string) => void` | Callback with the entered API key |
+| `onRun` | `(input: string) => void` | Callback with the text input value |
+| `canRun` | `boolean` | Enables/disables the Run button |
+
+#### Features
+
+- **Text input**: Multi-line textarea, grows based on content (2–4 rows)
+- **Enter to submit**: Enter key submits; Shift+Enter for newlines
+- **File upload**: Accepts `.pdf`, `.txt`, `.csv`, `.json`, `.md` files
+- **PDF extraction**: PDF files are processed by `extractPdfText()` and appended to the input with `--- filename ---` headers
+- **Plain text files**: Read directly via `file.text()` and appended
+- **File badge**: Shows filename and size, with clear button
+- **Loading state**: Upload button shows "..." during PDF processing
+
+---
+
+### SettingsModal (`src/components/SettingsModal.jsx`)
+
+Tabbed modal for configuring API keys and service tokens.
+
+#### Props
+
+| Prop | Type | Description |
+|---|---|---|
+| `onSave` | `(key: string) => void` | Callback with the Claude API key |
+
+#### Tabs
+
+| Tab | localStorage Key | Placeholder | Input Type |
+|---|---|---|---|
+| Claude | `vab_api_key` | `sk-ant-...` | password |
+| Slack | `vab_slack_webhook` | `https://hooks.slack.com/services/...` | text |
+| GitHub | `vab_github_token` | `ghp_...` | password |
+| Email | `vab_resend_key` | `re_...` | password |
+| Sheets | `vab_gsheets_key` | `AIza...` | password |
+
+Each tab has context-specific help text with setup instructions. "Save & Continue" saves all tab values to localStorage and calls `onSave` with the Claude key if valid.
 
 #### Validation
 
-The "Save & Continue" button is disabled until the key:
-- Starts with `sk-ant-`
-- Has length > 20 characters
+The button is disabled when the Claude key is invalid (must start with `sk-ant-` and be > 20 chars) **and** no key is already stored.
 
-#### Security
+---
 
-- Input type is `password` (masked)
-- Key is stored in localStorage only
-- The modal explains: "Your key is stored in your browser only and never sent anywhere else."
+### VariableBadges (`src/components/VariableBadges.jsx`)
+
+Displays template variable references (`{{NodeName.output}}`) at the bottom of node cards.
+
+#### Props
+
+| Prop | Type | Description |
+|---|---|---|
+| `node` | `{type, data}` | The node to extract variables from |
+| `allNodes` | `Node[]` | All nodes (for validation) |
+| `onNavigateToNode` | `(nodeId) => void` | Callback to pan camera to referenced node |
+
+#### Behavior
+
+- Extracts variables via `extractNodeVariables(node)`
+- Validates each against the node list (shows red `⚠` for unresolved, gray `←` for valid)
+- Shows max 3 badges inline, overflow shows "+N more" with hover tooltip
+- **Clickable**: Each badge navigates the canvas to the referenced node
+- Renders nothing if no variables are found
+
+---
+
+### ErrorBoundary (`src/components/ErrorBoundary.jsx`)
+
+React class component that catches render errors and displays a recovery UI.
+
+- **Catch**: `getDerivedStateFromError` + `componentDidCatch` (logs stack trace)
+- **Recovery UI**: Shows error message + stack trace with a "Clear flow & reload" button
+- **Recovery action**: Clears `vab_flow` from localStorage and reloads the page
+
+### Entry Point (`src/main.jsx`)
+
+- **BigInt polyfill**: `BigInt.prototype.toJSON = function () { return this.toString() }` — React Flow uses BigInt internally, which causes `JSON.stringify` to fail without this polyfill
+- **Render tree**: `StrictMode` → `ErrorBoundary` → `App`
 
 ---
 
@@ -641,21 +888,49 @@ The "Save & Continue" button is disabled until the key:
         "output": "",
         "status": "idle"
       }
+    },
+    {
+      "id": "node-1712345678902",
+      "type": "orchestratorNode",
+      "position": { "x": 340, "y": 150 },
+      "data": {
+        "name": "Orchestrator",
+        "systemPrompt": "You are a project manager.",
+        "temperature": 0.7,
+        "maxRounds": 5,
+        "output": "",
+        "status": "idle",
+        "currentRound": 0
+      }
+    },
+    {
+      "id": "node-1712345678903",
+      "type": "serviceNode",
+      "position": { "x": 580, "y": 150 },
+      "data": {
+        "name": "Webhook",
+        "serviceType": "slack",
+        "serviceConfig": { "message": "" },
+        "output": "",
+        "status": "idle"
+      }
     }
   ],
   "edges": [
-    {
-      "id": "reactflow__edge-node-1-node-2",
-      "source": "node-1",
-      "target": "node-2"
-    }
+    { "id": "reactflow__edge-node-1-node-2", "source": "node-1", "target": "node-2" }
   ]
 }
 ```
 
-### API Key (`vab_api_key`)
+### Service Tokens
 
-Plain string stored directly in localStorage.
+| Key | Service | Format |
+|---|---|---|
+| `vab_api_key` | Claude (Anthropic) | `sk-ant-...` |
+| `vab_slack_webhook` | Slack | Webhook URL |
+| `vab_github_token` | GitHub | PAT (`ghp_...`) |
+| `vab_resend_key` | Email (Resend) | API key (`re_...`) |
+| `vab_gsheets_key` | Google Sheets | API key (`AIza...`) |
 
 ---
 
@@ -665,14 +940,21 @@ Plain string stored directly in localStorage.
 |---|---|
 | Missing API key | "Run" button is disabled (`canRun = false`) |
 | Empty flow (no nodes) | "Run" button is disabled |
+| Running while already running | `isRunning` ref guard returns immediately |
 | Claude API error | Failing node turns red, error message shown on node, execution halts |
 | Cycle in graph | `topologicalSort` throws before any API calls |
 | Edge references missing node | `topologicalSort` throws with descriptive error |
 | Corrupt localStorage | `loadFlow()` catches parse errors, returns empty state |
-| Orchestrator has no subagents | Executes as regular agent (no tools passed) |
+| Unknown node types in storage | Filtered out on load (`VALID_TYPES` check) |
+| React internals in storage | Prevented by whitelist serialization (`cleanData()`) |
+| Orchestrator has no subagents | Executes with no tools (Claude responds directly) |
 | Subagent fails during tool call | Error returned as `tool_result` with `is_error: true`; orchestrator decides next step |
-| Orchestrator hits maxRounds | Returns last text content, sets status to `'done'` |
-| Orchestrator connected to orchestrator | Target is ignored (only `agentNode` targets become tools) |
+| Orchestrator hits maxRounds | Returns last text + call summary, status becomes `'done'` |
+| Service missing credentials | Throws with message directing user to Settings |
+| Webhook returns non-OK status | Throws `"HTTP {status}: {body}"` |
+| PDF extraction fails | Error message appended to input text |
+| React render crash | ErrorBoundary catches, shows recovery UI with "Clear flow & reload" |
+| Template variable references unknown node | Token left as-is (graceful degradation) |
 
 ---
 
@@ -710,7 +992,27 @@ Framework: **Vitest**
 | buildTools: deduplicates names | Appends ID suffix on collision |
 | buildTools: fallback description | Uses `"Agent: {name}"` when prompt empty |
 
-Run tests:
+### Template Unit Tests (`tests/template.test.js`)
+
+| Test | Assertion |
+|---|---|
+| extractVariables: parses simple reference | `{{Agent.output}}` → correct nodeName + path |
+| extractVariables: parses sub-path | `{{Agent.output.user.name}}` → path = `"user.name"` |
+| resolvePath: traverses objects | Nested paths resolve correctly |
+| resolvePath: array index support | `items[0]` resolves to first element |
+| resolveTemplate: substitutes values | Variables replaced with node output |
+| resolveTemplate: case-insensitive matching | `{{agent.output}}` matches "Agent" |
+| resolveTemplate: leaves unknown nodes | Token preserved when node not found |
+| validateVariables: marks valid/invalid | Found nodes → valid, missing → invalid with reason |
+
+### Service Registry Tests (`tests/service-registry.test.js`)
+
+| Test | Assertion |
+|---|---|
+| executeService: throws on unknown type | `"Unknown service type"` |
+| Slack: throws without webhook URL | Directs user to Settings |
+
+Run all tests:
 
 ```bash
 npm test

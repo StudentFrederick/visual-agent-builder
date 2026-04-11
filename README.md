@@ -12,6 +12,9 @@ Visual Agent Builder lets you:
 - **Stream responses** — See Claude's output appear in real-time on each node
 - **Persist your work** — Flows are saved to localStorage and restored on reload
 - **Orchestrate multi-agent workflows** — Use Orchestrator nodes that autonomously delegate tasks to connected agents via Claude's tool use API, with configurable multi-turn agentic loops
+- **Connect external services** — Add Service nodes for Slack, GitHub Issues, Email (Resend), Google Sheets, or generic webhooks
+- **Use template variables** — Reference other nodes' output with `{{NodeName.output}}` syntax, with JSON path support
+- **Upload documents** — Attach PDF, TXT, CSV, JSON, or Markdown files as input via the InputBar
 
 ## Tech Stack
 
@@ -71,10 +74,25 @@ npm test
 
 ### Multi-Agent Orchestration
 1. **Add an orchestrator** — Click "+ Orchestrator" to place a purple orchestrator node
-2. **Add subagents** — Add regular agent nodes and connect them **from** the orchestrator's right handle **to** each agent's left handle
+2. **Add subagents** — Add regular agent nodes or service nodes and connect them **from** the orchestrator's right handle **to** each node's left handle
 3. **Configure the orchestrator** — Give it a system prompt describing its goal (e.g., "You are a project manager. Research the topic, then write a report."). Set Max Rounds (1–20) to control how many turns it can take
-4. **Configure subagents** — Each agent gets its own system prompt and acts as a tool the orchestrator can call
-5. **Run** — The orchestrator uses Claude's tool use API to decide which agents to call, can run them in parallel, receives their results, and can call more agents in subsequent rounds until it produces a final answer
+4. **Configure subagents** — Each agent/service gets its own config and acts as a tool the orchestrator can call
+5. **Run** — The orchestrator uses Claude's tool use API to decide which tools to call, can run them in parallel, receives their results, and can call more in subsequent rounds until it produces a final answer
+
+### External Services
+1. **Add a service node** — Click "+ Service" to place an orange service node
+2. **Choose a service type** — Select from Webhook, Slack, GitHub Issue, Email (Resend), or Google Sheets
+3. **Configure credentials** — Open Settings and add the required token/key for the service
+4. **Configure the node** — Set service-specific fields (URL, message, repo, etc.)
+5. **Run** — Service nodes execute HTTP calls and pass results to the next node
+
+### Template Variables
+Reference any node's output in system prompts or service config:
+- `{{Researcher.output}}` — full output of the "Researcher" node
+- `{{Analyzer.output.score}}` — JSON path into the output
+- `{{Data.output.items[0]}}` — array index support
+
+Variable badges on each node show which nodes it references, with clickable navigation.
 
 ## Project Structure
 
@@ -92,19 +110,28 @@ visual-agent-builder/
 │   ├── components/
 │   │   ├── AgentNode.jsx         # Custom React Flow node with status indicators
 │   │   ├── OrchestratorNode.jsx  # Orchestrator node with purple styling + round counter
-│   │   ├── FlowCanvas.jsx        # React Flow canvas wrapper
-│   │   ├── NodeEditorPanel.jsx   # Sidebar for editing selected node
-│   │   ├── SettingsModal.jsx     # API key entry modal
-│   │   └── Toolbar.jsx           # Action buttons (Add, Orchestrator, Run, Clear, Settings)
+│   │   ├── ServiceNode.jsx       # Service node for external API calls (orange)
+│   │   ├── FlowCanvas.jsx        # React Flow canvas wrapper with node enrichment
+│   │   ├── InputBar.jsx          # Bottom input bar with text input + PDF upload
+│   │   ├── NodeEditorPanel.jsx   # Adaptive sidebar for editing selected node
+│   │   ├── SettingsModal.jsx     # Tabbed settings for API keys + service tokens
+│   │   ├── VariableBadges.jsx    # Template variable display + navigation
+│   │   ├── ErrorBoundary.jsx     # React error boundary with recovery UI
+│   │   └── Toolbar.jsx           # Action buttons (Add, Orchestrator, Service, Run, Clear, Settings)
 │   ├── hooks/
-│   │   ├── useFlow.js            # Flow state + localStorage persistence
-│   │   └── useRunner.js          # Topological execution + Claude streaming + orchestrator dispatch
+│   │   ├── useFlow.js            # Flow state + localStorage persistence + edge animation
+│   │   └── useRunner.js          # Topological execution + template resolution + multi-type dispatch
 │   └── utils/
 │       ├── claude.js             # Streaming Claude API wrapper
 │       ├── orchestrator.js       # Orchestrator agentic loop + tool construction
+│       ├── service-registry.js   # Pluggable service types (Slack, GitHub, Email, Sheets, Webhook)
+│       ├── template.js           # Template variable engine ({{Node.output.path}})
+│       ├── pdf-reader.js         # PDF text extraction (lazy-loaded pdfjs-dist)
 │       └── topology.js           # Topological sort (Kahn's algorithm)
 └── tests/
     ├── orchestrator.test.js      # Unit tests for orchestrator utilities
+    ├── service-registry.test.js  # Unit tests for service registry
+    ├── template.test.js          # Unit tests for template engine
     └── topology.test.js          # Unit tests for topological sort
 ```
 
@@ -114,18 +141,25 @@ The app is a **single-page React application with no backend**. All Claude API c
 
 Three layers:
 
-1. **Canvas Layer** — React Flow renders the node graph. Users place `AgentNode` and `OrchestratorNode` components and connect them via edges.
-2. **State Layer** — The `useFlow` hook manages nodes/edges state and persists to localStorage on every change.
-3. **Runtime Layer** — The `useRunner` hook topologically sorts the graph, executes regular agent nodes sequentially via the Claude streaming API, and delegates orchestrator nodes to a multi-turn agentic loop that uses Claude's tool use API to autonomously call connected subagents.
+1. **Canvas Layer** — React Flow renders the node graph with three node types: AgentNode (blue), OrchestratorNode (purple), and ServiceNode (orange).
+2. **State Layer** — The `useFlow` hook manages nodes/edges state and persists to localStorage on every change, with whitelist serialization to prevent data leaks.
+3. **Runtime Layer** — The `useRunner` hook topologically sorts the graph, resolves template variables, then dispatches each node by type: streaming Claude calls for agents, multi-turn agentic loops for orchestrators, and HTTP calls for services.
 
 See [TECHNICAL_DOCS.md](./TECHNICAL_DOCS.md) for detailed technical documentation.
 
-## API Key Handling
+## API Keys & Service Tokens
 
-- Your API key is stored in `localStorage` under `vab_api_key`
-- It is sent directly to the Anthropic API from your browser
-- It is **never** sent to any other server
-- You can update it at any time via Settings in the toolbar
+All credentials are stored in `localStorage` in your browser only — never sent to any server other than the intended API.
+
+| Service | Settings Tab | localStorage Key |
+|---|---|---|
+| Claude (Anthropic) | Claude | `vab_api_key` |
+| Slack | Slack | `vab_slack_webhook` |
+| GitHub | GitHub | `vab_github_token` |
+| Email (Resend) | Email | `vab_resend_key` |
+| Google Sheets | Sheets | `vab_gsheets_key` |
+
+Configure all tokens in the tabbed Settings modal (gear icon in the toolbar).
 
 ## License
 
