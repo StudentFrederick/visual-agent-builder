@@ -48,7 +48,7 @@ src/
 │   ├── FlowCanvas.jsx         # React Flow canvas wrapper, registers all node types
 │   ├── NodeEditorPanel.jsx    # Sidebar editor (dynamic fields per node type)
 │   ├── Toolbar.jsx            # Top bar actions
-│   ├── InputBar.jsx           # Bottom input with file upload + PDF extraction
+│   ├── InputBar.jsx           # Bottom input with file upload, PDF extraction + AI flow generation
 │   ├── SettingsModal.jsx      # API key modal
 │   └── ErrorBoundary.jsx      # Crash recovery
 ├── hooks/
@@ -59,6 +59,7 @@ src/
     ├── orchestrator.js        # Orchestrator agentic loop (max 4096 tokens)
     ├── topology.js            # Kahn's topological sort with cycle detection
     ├── service-registry.js    # Pluggable service type registry (webhook implemented)
+    ├── flow-generator.js      # AI flow generation from natural language descriptions
     └── pdf-reader.js          # PDF text extraction (pdfjs-dist, lazy-loaded)
 ```
 
