@@ -173,6 +173,16 @@ export function useFlow() {
     setEdges([])
   }, [])
 
+  const replaceFlow = useCallback((newNodes, newEdges) => {
+    setNodes(newNodes)
+    setEdges(newEdges)
+  }, [])
+
+  const appendFlow = useCallback((newNodes, newEdges) => {
+    setNodes(ns => [...ns, ...newNodes])
+    setEdges(es => [...es, ...newEdges])
+  }, [])
+
   return {
     nodes,
     edges,
@@ -185,6 +195,8 @@ export function useFlow() {
     updateNodeData,
     activateEdges,
     resetEdgeStyles,
-    clearFlow
+    clearFlow,
+    replaceFlow,
+    appendFlow
   }
 }
