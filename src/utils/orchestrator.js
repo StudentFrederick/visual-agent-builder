@@ -112,7 +112,8 @@ export async function executeOrchestrator({
   userMessage,
   onUpdate,
   onSubagentUpdate,
-  onEdgeActivate
+  onEdgeActivate,
+  signal
 }) {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
   const toolDefs = buildTools(subagentNodes)
@@ -128,6 +129,7 @@ export async function executeOrchestrator({
   const callLog = []
 
   while (round < maxRounds) {
+    if (signal?.aborted) break
     round++
     onUpdate({
       currentRound: round,
@@ -142,7 +144,7 @@ export async function executeOrchestrator({
       system: node.data.systemPrompt,
       messages,
       tools: tools.length > 0 ? tools : undefined
-    })
+    }, { signal })
 
     // Extract text (orchestrator's "thoughts" or final answer)
     const textBlocks = response.content.filter(b => b.type === 'text')
@@ -210,7 +212,8 @@ export async function executeOrchestrator({
               systemPrompt: subNode.data.systemPrompt,
               userMessage: toolUse.input.task,
               temperature: subNode.data.temperature,
-              onChunk: text => onSubagentUpdate(subNode.id, { output: text })
+              onChunk: text => onSubagentUpdate(subNode.id, { output: text }),
+              signal
             })
           }
 
