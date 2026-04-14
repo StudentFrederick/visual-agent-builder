@@ -7,7 +7,8 @@ const statusStyles = {
   calling_subagent: 'border-yellow-400 bg-yellow-50',
   running: 'border-yellow-400 bg-yellow-50',
   done: 'border-green-400 bg-green-50',
-  error: 'border-red-400 bg-red-50'
+  error: 'border-red-400 bg-red-50',
+  cancelled: 'border-gray-400 bg-gray-100'
 }
 
 const statusBadges = {
@@ -16,7 +17,8 @@ const statusBadges = {
   calling_subagent: { label: 'Calling agents', color: 'bg-yellow-200 text-yellow-800' },
   running: { label: 'Running', color: 'bg-yellow-200 text-yellow-800' },
   done: { label: 'Done', color: 'bg-green-200 text-green-700' },
-  error: { label: 'Error', color: 'bg-red-200 text-red-700' }
+  error: { label: 'Error', color: 'bg-red-200 text-red-700' },
+  cancelled: { label: 'Cancelled', color: 'bg-gray-300 text-gray-700' }
 }
 
 export function OrchestratorNode({ data, selected }) {

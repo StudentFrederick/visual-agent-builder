@@ -38,14 +38,14 @@ export default function App() {
     appendFlow
   } = useFlow()
 
-  const { run, isRunning } = useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles })
+  const { run, stop, isRunning } = useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles })
 
   const selectedNode = useMemo(
     () => (selectedNodeId ? nodes.find(n => n.id === selectedNodeId) || null : null),
     [nodes, selectedNodeId]
   )
 
-  const canRun = !!apiKey && nodes.length > 0 && !isRunning.current
+  const canRun = !!apiKey && nodes.length > 0 && !isRunning
 
   const handleSaveKey = useCallback(key => {
     localStorage.setItem(API_KEY_STORAGE, key)
@@ -140,9 +140,11 @@ export default function App() {
         onAddOrchestrator={addOrchestratorNode}
         onAddService={() => addServiceNode()}
         onRun={() => handleRun('')}
+        onStop={stop}
         onClear={handleClear}
         onSettings={() => setShowSettings(true)}
         canRun={canRun}
+        isRunning={isRunning}
       />
 
       <div className="flex-1 flex overflow-hidden">
