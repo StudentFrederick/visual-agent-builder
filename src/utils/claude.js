@@ -17,7 +17,8 @@ export async function streamClaudeResponse({
   userMessage,
   temperature,
   onChunk,
-  onDone
+  onDone,
+  signal
 }) {
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true })
 
@@ -29,9 +30,10 @@ export async function streamClaudeResponse({
     temperature,
     system: systemPrompt,
     messages: [{ role: 'user', content: userMessage || 'Begin.' }]
-  })
+  }, { signal })
 
   for await (const event of stream) {
+    if (signal?.aborted) break
     if (
       event.type === 'content_block_delta' &&
       event.delta.type === 'text_delta'
