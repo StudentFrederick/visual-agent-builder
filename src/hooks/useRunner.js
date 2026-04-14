@@ -1,5 +1,5 @@
 // src/hooks/useRunner.js
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { topologicalSort } from '../utils/topology.js'
 import { streamClaudeResponse } from '../utils/claude.js'
 import { executeService } from '../utils/service-registry.js'
@@ -11,28 +11,34 @@ import {
 import { resolveTemplate } from '../utils/template.js'
 
 export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEdgeStyles }) {
-  const isRunning = useRef(false)
+  const [isRunning, setIsRunning] = useState(false)
+  const controllerRef = useRef(null)
+
+  const stop = useCallback(() => {
+    if (controllerRef.current) {
+      controllerRef.current.abort()
+      controllerRef.current = null
+    }
+  }, [])
 
   const run = useCallback(
     async (apiKey, initialInput = '') => {
-      if (isRunning.current) return
-      isRunning.current = true
+      if (isRunning) return
+      const controller = new AbortController()
+      controllerRef.current = controller
+      setIsRunning(true)
 
       try {
         const sorted = topologicalSort(nodes, edges)
-
-        // Identify nodes that are subagents of an orchestrator — skip them in the main loop
         const subagentIds = getOrchestratorSubagentIds(nodes, edges)
-
         let prevOutput = initialInput
 
         for (const node of sorted) {
-          // Skip subagent nodes — they are executed by their orchestrator
+          if (controller.signal.aborted) break
           if (subagentIds.has(node.id)) continue
 
           updateNodeData(node.id, { status: 'running', output: '' })
 
-          // Resolve template variables in node config
           const resolvedPrompt = resolveTemplate(node.data.systemPrompt || '', nodes)
           const resolvedConfig = node.data.serviceConfig
             ? {
@@ -46,7 +52,6 @@ export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEd
             let output
 
             if (node.type === 'orchestratorNode') {
-              // Orchestrator: use agentic loop with tool use
               const subagents = getSubagentNodes(node.id, nodes, edges)
               const resolvedNode = { ...node, data: { ...node.data, systemPrompt: resolvedPrompt } }
               output = await executeOrchestrator({
@@ -57,36 +62,46 @@ export function useRunner({ nodes, edges, updateNodeData, activateEdges, resetEd
                 onUpdate: data => updateNodeData(node.id, data),
                 onSubagentUpdate: (id, data) => updateNodeData(id, data),
                 onEdgeActivate: (sourceId, targetIds, active) =>
-                  activateEdges(sourceId, targetIds, active)
+                  activateEdges(sourceId, targetIds, active),
+                signal: controller.signal
               })
             } else if (node.type === 'serviceNode') {
-              // Service node: execute HTTP/webhook action
               output = await executeService(node.data.serviceType, resolvedConfig, prevOutput)
             } else {
-              // Regular agent: simple streaming call
               output = await streamClaudeResponse({
                 apiKey,
                 systemPrompt: resolvedPrompt,
                 userMessage: prevOutput,
                 temperature: node.data.temperature,
-                onChunk: text => updateNodeData(node.id, { output: text })
+                onChunk: text => updateNodeData(node.id, { output: text }),
+                signal: controller.signal
               })
+            }
+
+            if (controller.signal.aborted) {
+              updateNodeData(node.id, { status: 'cancelled', output: output || 'Cancelled' })
+              break
             }
 
             updateNodeData(node.id, { status: 'done', output })
             prevOutput = output
           } catch (err) {
+            if (controller.signal.aborted) {
+              updateNodeData(node.id, { status: 'cancelled', output: 'Cancelled' })
+              break
+            }
             updateNodeData(node.id, { status: 'error', output: err.message })
             throw err
           }
         }
       } finally {
-        isRunning.current = false
+        controllerRef.current = null
+        setIsRunning(false)
         resetEdgeStyles()
       }
     },
-    [nodes, edges, updateNodeData, activateEdges, resetEdgeStyles]
+    [nodes, edges, updateNodeData, activateEdges, resetEdgeStyles, isRunning]
   )
 
-  return { run, isRunning }
+  return { run, stop, isRunning }
 }
